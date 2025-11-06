@@ -23,8 +23,8 @@ var (
 	vtyFlag    = flag.Bool("vty", false, "run in VTY mode")
 
 	// Control mode flags
-	ctlFlag    = flag.Bool("ctl", false, "run in control mode")
-	socketFlag = flag.String("socket", "", "path to control socket (for control mode)")
+	ctlFlag = flag.Bool("ctl", false, "run in control mode")
+	pidFlag = flag.Int("pid", 0, "PID of bgrun daemon (for control mode)")
 
 	helpFlag = flag.Bool("help", false, "show help message")
 )
@@ -48,9 +48,9 @@ func main() {
 }
 
 func runControlMode() {
-	if *socketFlag == "" {
-		fmt.Fprintln(os.Stderr, "Error: -socket flag is required for control mode")
-		fmt.Fprintln(os.Stderr, "Usage: bgrun -ctl -socket <path> <command> [args...]")
+	if *pidFlag == 0 {
+		fmt.Fprintln(os.Stderr, "Error: -pid flag is required for control mode")
+		fmt.Fprintln(os.Stderr, "Usage: bgrun -ctl -pid <pid> <command> [args...]")
 		fmt.Fprintln(os.Stderr, "")
 		fmt.Fprintln(os.Stderr, "Commands:")
 		fmt.Fprintln(os.Stderr, "  status              Show process status")
@@ -69,7 +69,14 @@ func runControlMode() {
 
 	command := args[0]
 
-	c, err := client.Connect(*socketFlag)
+	// Get socket path from PID
+	socketPath, err := getSocketPathFromPID(*pidFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to find socket for PID %d: %v\n", *pidFlag, err)
+		os.Exit(1)
+	}
+
+	c, err := client.Connect(socketPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to connect: %v\n", err)
 		os.Exit(1)
@@ -92,7 +99,7 @@ func runControlMode() {
 	case "wait":
 		if len(args) < 3 {
 			fmt.Fprintln(os.Stderr, "Error: wait type and timeout required")
-			fmt.Fprintln(os.Stderr, "Usage: bgrun -ctl -socket <path> wait <exit|foreground> <seconds>")
+			fmt.Fprintln(os.Stderr, "Usage: bgrun -ctl -pid <pid> wait <exit|foreground> <seconds>")
 			os.Exit(1)
 		}
 		waitTypeStr := args[1]
@@ -175,6 +182,25 @@ func runDaemonMode() {
 	log.Println("Received signal, shutting down...")
 }
 
+func getSocketPathFromPID(pid int) (string, error) {
+	// Try XDG_RUNTIME_DIR first
+	if xdgDir := os.Getenv("XDG_RUNTIME_DIR"); xdgDir != "" {
+		socketPath := fmt.Sprintf("%s/%d/control.sock", xdgDir, pid)
+		if _, err := os.Stat(socketPath); err == nil {
+			return socketPath, nil
+		}
+	}
+
+	// Fall back to /tmp/.bgrun-<uid>/<pid>
+	uid := os.Getuid()
+	socketPath := fmt.Sprintf("/tmp/.bgrun-%d/%d/control.sock", uid, pid)
+	if _, err := os.Stat(socketPath); err == nil {
+		return socketPath, nil
+	}
+
+	return "", fmt.Errorf("control socket not found (tried XDG_RUNTIME_DIR and /tmp/.bgrun-%d)", uid)
+}
+
 func parseConfig(command []string) (*daemon.Config, error) {
 	config := &daemon.Config{
 		Command: command,
@@ -225,8 +251,8 @@ func showHelp() {
 	fmt.Println("bgrun - Background Process Runner")
 	fmt.Println()
 	fmt.Println("Usage:")
-	fmt.Println("  bgrun [daemon-options] <command> [args...]         Run daemon mode")
-	fmt.Println("  bgrun -ctl -socket <path> <command> [args...]      Run control mode")
+	fmt.Println("  bgrun [daemon-options] <command> [args...]    Run daemon mode")
+	fmt.Println("  bgrun -ctl -pid <pid> <command> [args...]     Run control mode")
 	fmt.Println()
 	fmt.Println("Daemon Options:")
 	fmt.Println("  -stdin <mode>   stdin mode: null, stream, or file path (default: null)")
@@ -235,8 +261,8 @@ func showHelp() {
 	fmt.Println("  -vty            run in VTY mode")
 	fmt.Println()
 	fmt.Println("Control Options:")
-	fmt.Println("  -ctl            enable control mode")
-	fmt.Println("  -socket <path>  path to control socket")
+	fmt.Println("  -ctl         enable control mode")
+	fmt.Println("  -pid <pid>   PID of bgrun daemon to control")
 	fmt.Println()
 	fmt.Println("Control Commands:")
 	fmt.Println("  status              Show process status")
@@ -263,9 +289,9 @@ func showHelp() {
 	fmt.Println("  bgrun -vty -stdin stream vim myfile.txt")
 	fmt.Println()
 	fmt.Println("  # Control mode:")
-	fmt.Println("  bgrun -ctl -socket /run/user/1000/12345/control.sock status")
-	fmt.Println("  bgrun -ctl -socket /run/user/1000/12345/control.sock attach")
-	fmt.Println("  bgrun -ctl -socket /run/user/1000/12345/control.sock wait exit 10")
+	fmt.Println("  bgrun -ctl -pid 12345 status")
+	fmt.Println("  bgrun -ctl -pid 12345 attach")
+	fmt.Println("  bgrun -ctl -pid 12345 wait exit 10")
 }
 
 // Control command functions
