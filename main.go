@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 
@@ -17,10 +18,11 @@ import (
 
 var (
 	// Daemon mode flags
-	stdinFlag  = flag.String("stdin", "null", "stdin mode: null, stream, or file path")
-	stdoutFlag = flag.String("stdout", "log", "stdout mode: null, log, or file path")
-	stderrFlag = flag.String("stderr", "log", "stderr mode: null, log, or file path")
-	vtyFlag    = flag.Bool("vty", false, "run in VTY mode")
+	stdinFlag      = flag.String("stdin", "null", "stdin mode: null, stream, or file path")
+	stdoutFlag     = flag.String("stdout", "log", "stdout mode: null, log, or file path")
+	stderrFlag     = flag.String("stderr", "log", "stderr mode: null, log, or file path")
+	vtyFlag        = flag.Bool("vty", false, "run in VTY mode")
+	backgroundFlag = flag.Bool("background", false, "run daemon in background")
 
 	// Control mode flags
 	ctlFlag = flag.Bool("ctl", false, "run in control mode")
@@ -37,6 +39,12 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Handle background mode - re-exec without -background flag
+	if *backgroundFlag {
+		runInBackground()
+		return
+	}
+
 	// Run in control mode if -ctl is specified
 	if *ctlFlag {
 		runControlMode()
@@ -45,6 +53,50 @@ func main() {
 
 	// Otherwise, run in daemon mode
 	runDaemonMode()
+}
+
+func runInBackground() {
+	// Build new args without -background flag
+	var newArgs []string
+	skipNext := false
+
+	for i := 1; i < len(os.Args); i++ {
+		if skipNext {
+			skipNext = false
+			continue
+		}
+
+		arg := os.Args[i]
+		if arg == "-background" || arg == "--background" {
+			continue
+		}
+		if arg == "-background=true" || arg == "--background=true" {
+			continue
+		}
+		if arg == "-background=false" || arg == "--background=false" {
+			continue
+		}
+
+		newArgs = append(newArgs, arg)
+	}
+
+	// Create command to run in background
+	cmd := exec.Command(os.Args[0], newArgs...)
+	cmd.Stdin = nil
+	cmd.Stdout = nil
+	cmd.Stderr = nil
+
+	// Start the process
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to start background process: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Output the PID for control operations
+	fmt.Println(cmd.Process.Pid)
+
+	// Exit parent process
+	os.Exit(0)
 }
 
 func runControlMode() {
@@ -259,6 +311,7 @@ func showHelp() {
 	fmt.Println("  -stdout <mode>  stdout mode: null, log, or file path (default: log)")
 	fmt.Println("  -stderr <mode>  stderr mode: null, log, or file path (default: log)")
 	fmt.Println("  -vty            run in VTY mode")
+	fmt.Println("  -background     run daemon in background and output PID")
 	fmt.Println()
 	fmt.Println("Control Options:")
 	fmt.Println("  -ctl         enable control mode")
