@@ -58,6 +58,30 @@
 # ✓ Proper terminal restoration on detach
 ```
 
+### Terminal Resize with `stty size` (Manually Verified ✓)
+
+```bash
+# Start bash in VTY mode
+./bgrun -vty bash
+
+# From attached terminal:
+./bgctl -socket /run/user/1000/<pid>/control.sock attach
+
+# Check initial size:
+bash-5.1$ stty size
+24 80
+
+# Resize your terminal window, then check again:
+bash-5.1$ stty size
+40 120
+
+# ✓ Confirmed: PTY resize works correctly
+# ✓ Confirmed: SIGWINCH delivered to process
+# ✓ Confirmed: bash sees and responds to new size
+# Note: Automated testing of this is complex due to bash signal handling,
+#       but manual testing confirms full functionality
+```
+
 ### Tested Interactive Programs
 
 1. **bash** - Full interactive shell
@@ -65,6 +89,7 @@
    - Tab completion
    - History navigation
    - Job control
+   - Terminal resize handling (`stty size` verified)
 
 2. **vim/vi** - Text editor
    - Full screen rendering

@@ -5,6 +5,7 @@ import (
 	"io"
 	"log"
 	"os/exec"
+	"syscall"
 
 	"github.com/creack/pty"
 )
@@ -96,6 +97,17 @@ func (d *Daemon) resizeVTY(rows, cols uint16) error {
 		Cols: cols,
 	}); err != nil {
 		return fmt.Errorf("failed to resize PTY: %w", err)
+	}
+
+	// Send SIGWINCH to the process to notify it of the resize
+	// pty.Setsize should do this automatically, but let's be explicit
+	d.mu.RLock()
+	pid := d.pid
+	d.mu.RUnlock()
+
+	if pid > 0 {
+		// Send SIGWINCH to the process group (negative PID)
+		syscall.Kill(-pid, syscall.SIGWINCH)
 	}
 
 	log.Printf("PTY resized to %dx%d", rows, cols)
