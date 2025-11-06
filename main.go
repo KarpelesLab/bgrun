@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/KarpelesLab/bgrun/client"
@@ -155,11 +156,12 @@ func runControlMode() {
 			os.Exit(1)
 		}
 		waitTypeStr := args[1]
-		var timeoutSecs uint32
-		if _, err := fmt.Sscanf(args[2], "%d", &timeoutSecs); err != nil {
+		timeout, err := strconv.ParseUint(args[2], 10, 32)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: invalid timeout: %v\n", err)
 			os.Exit(1)
 		}
+		timeoutSecs := uint32(timeout)
 		if err := cmdWait(c, waitTypeStr, timeoutSecs); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
@@ -170,8 +172,8 @@ func runControlMode() {
 			fmt.Fprintln(os.Stderr, "Error: signal number required")
 			os.Exit(1)
 		}
-		var signum int
-		if _, err := fmt.Sscanf(args[1], "%d", &signum); err != nil {
+		signum, err := strconv.ParseInt(args[1], 10, 32)
+		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error: invalid signal number: %v\n", err)
 			os.Exit(1)
 		}
