@@ -12,7 +12,7 @@ cleanup() {
         wait $BGRUN_PID 2>/dev/null || true
     fi
     if [ -n "$SOCKET" ] && [ -S "$SOCKET" ]; then
-        ./bgctl -socket "$SOCKET" shutdown 2>/dev/null || true
+        ./bgrun -ctl -pid $DAEMON_PID shutdown 2>/dev/null || true
     fi
 }
 
@@ -46,7 +46,7 @@ fi
 
 # Check status
 echo "Checking initial status..."
-./bgctl -socket "$SOCKET" status
+./bgrun -ctl -pid $DAEMON_PID status
 
 # Create a test client that sends input and reads output
 echo ""
@@ -60,7 +60,7 @@ echo "Sending test inputs..."
     sleep 0.5
     # Send Ctrl-D (EOF) to close the read loop
     printf "\x04"
-) | timeout 5 ./bgctl -socket "$SOCKET" attach 2>&1 | tee /tmp/vty_test_output.txt || true
+) | timeout 5 ./bgrun -ctl -pid $DAEMON_PID attach 2>&1 | tee /tmp/vty_test_output.txt || true
 
 echo ""
 echo "Output received:"
@@ -82,14 +82,14 @@ echo "Waiting for process to be ready..."
 sleep 1
 
 echo "Sending SIGINT (signal 2)..."
-./bgctl -socket "$SOCKET" signal 2
+./bgrun -ctl -pid $DAEMON_PID signal 2
 
 sleep 1
 
 echo "Checking if signal was received..."
 grep "SIGINT caught" /tmp/bgrun_test2.log && echo "  ✓ Signal handler worked!" || echo "  ✗ Signal not caught"
 
-./bgctl -socket "$SOCKET" shutdown 2>/dev/null || true
+./bgrun -ctl -pid $DAEMON_PID shutdown 2>/dev/null || true
 wait $BGRUN_PID 2>/dev/null || true
 BGRUN_PID=""
 
@@ -106,12 +106,12 @@ sleep 1
 
 echo "Sending Ctrl-C (0x03) via stdin..."
 # Note: This test shows the stdin path, actual Ctrl-C behavior may vary
-printf "\x03" | timeout 2 ./bgctl -socket "$SOCKET" attach 2>&1 || true
+printf "\x03" | timeout 2 ./bgrun -ctl -pid $DAEMON_PID attach 2>&1 || true
 
 sleep 1
-./bgctl -socket "$SOCKET" status | grep -q "Running: false" && echo "  ✓ Process interrupted" || echo "  ✗ Process still running"
+./bgrun -ctl -pid $DAEMON_PID status | grep -q "Running: false" && echo "  ✓ Process interrupted" || echo "  ✗ Process still running"
 
-./bgctl -socket "$SOCKET" shutdown 2>/dev/null || true
+./bgrun -ctl -pid $DAEMON_PID shutdown 2>/dev/null || true
 wait $BGRUN_PID 2>/dev/null || true
 BGRUN_PID=""
 
@@ -127,7 +127,7 @@ get_socket
 sleep 1
 
 echo "Getting PID of running process..."
-PID=$(./bgctl -socket "$SOCKET" status | grep "PID:" | awk '{print $2}')
+PID=$(./bgrun -ctl -pid $DAEMON_PID status | grep "PID:" | awk '{print $2}')
 echo "Process PID: $PID"
 
 echo "Sending SIGKILL..."
@@ -135,7 +135,7 @@ kill -9 $PID
 
 sleep 1
 
-./bgctl -socket "$SOCKET" status | grep -q "Running: false" && echo "  ✓ Process killed successfully" || echo "  ✗ Process still running"
+./bgrun -ctl -pid $DAEMON_PID status | grep -q "Running: false" && echo "  ✓ Process killed successfully" || echo "  ✗ Process still running"
 
 wait $BGRUN_PID 2>/dev/null || true
 BGRUN_PID=""
@@ -159,7 +159,7 @@ echo "Sending rapid inputs..."
     echo "abcdefghijklmnopqrstuvwxyz"
     echo "0123456789"
     printf "\x04"  # Ctrl-D to close
-) | timeout 3 ./bgctl -socket "$SOCKET" attach 2>&1 | tee /tmp/vty_rapid_output.txt || true
+) | timeout 3 ./bgrun -ctl -pid $DAEMON_PID attach 2>&1 | tee /tmp/vty_rapid_output.txt || true
 
 echo ""
 echo "Checking echo integrity..."
@@ -179,10 +179,10 @@ get_socket
 
 sleep 1
 
-# Note: bgctl attach would handle resize automatically with SIGWINCH
+# Note: bgrun -ctl attach would handle resize automatically with SIGWINCH
 # For manual testing, we'd use the resize API directly
 echo "Process running with PTY..."
-./bgctl -socket "$SOCKET" status | grep "Has VTY: true" && echo "  ✓ VTY mode confirmed" || echo "  ✗ Not in VTY mode"
+./bgrun -ctl -pid $DAEMON_PID status | grep "Has VTY: true" && echo "  ✓ VTY mode confirmed" || echo "  ✗ Not in VTY mode"
 
 wait $BGRUN_PID 2>/dev/null || true
 BGRUN_PID=""

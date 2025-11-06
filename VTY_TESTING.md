@@ -44,10 +44,10 @@
 
 ```bash
 # Start an interactive bash session
-./bgrun -vty bash
+PID=$(./bgrun -background -vty bash)
 
 # From another terminal:
-./bgctl -socket /run/user/1000/<pid>/control.sock attach
+./bgrun -ctl -pid $PID attach
 
 # Features tested:
 # ✓ Raw terminal mode activation
@@ -62,10 +62,10 @@
 
 ```bash
 # Start bash in VTY mode
-./bgrun -vty bash
+PID=$(./bgrun -background -vty bash)
 
 # From attached terminal:
-./bgctl -socket /run/user/1000/<pid>/control.sock attach
+./bgrun -ctl -pid $PID attach
 
 # Check initial size:
 bash-5.1$ stty size

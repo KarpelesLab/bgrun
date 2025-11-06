@@ -26,7 +26,7 @@ echo "Socket: $SOCKET"
 
 # Test with simple echo
 echo "Sending: hello world"
-(echo "hello world"; sleep 0.5) | timeout 2 ./bgctl -socket "$SOCKET" attach 2>&1 | grep -i "hello" && echo "✓ Echo works!" || echo "✗ Echo failed"
+(echo "hello world"; sleep 0.5) | timeout 2 ./bgrun -ctl -pid $DAEMON_PID attach 2>&1 | grep -i "hello" && echo "✓ Echo works!" || echo "✗ Echo failed"
 
 kill $BGRUN_PID 2>/dev/null || true
 wait $BGRUN_PID 2>/dev/null || true
@@ -44,7 +44,7 @@ SOCKET=$(find /run/user/$(id -u) /tmp/.bgrun-$(id -u) -name "control.sock" -newe
 echo "Socket: $SOCKET"
 
 echo "Sending: test input"
-(echo "test input"; sleep 0.5) | timeout 2 ./bgctl -socket "$SOCKET" attach 2>&1 | tee /tmp/vty_awk_output.txt
+(echo "test input"; sleep 0.5) | timeout 2 ./bgrun -ctl -pid $DAEMON_PID attach 2>&1 | tee /tmp/vty_awk_output.txt
 
 grep -q "TEST INPUT" /tmp/vty_awk_output.txt && echo "✓ Uppercase transform works!" || echo "✗ Transform failed"
 

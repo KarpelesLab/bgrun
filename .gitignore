@@ -31,3 +31,4 @@ Thumbs.db
 /tmp/
 *.sock
 *.log
+examples/test_resize

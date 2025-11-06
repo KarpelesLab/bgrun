@@ -1,15 +1,15 @@
 #!/bin/bash
 # Quick test of sending stdin and reading output
 
-SOCKET="$1"
+DAEMON_PID="$1"
 
-if [ -z "$SOCKET" ]; then
-    echo "Usage: $0 <socket-path>"
+if [ -z "$DAEMON_PID" ]; then
+    echo "Usage: $0 <daemon-pid>"
     exit 1
 fi
 
-echo "Testing stdin/stdout with socket: $SOCKET"
+echo "Testing stdin/stdout with daemon PID: $DAEMON_PID"
 echo "Type something and press Enter (Ctrl-D to exit):"
 
-# Use cat to read stdin and send to bgctl
-timeout 10 ./bgctl -socket "$SOCKET" attach
+# Use bgrun -ctl to attach and interact
+timeout 10 ./bgrun -ctl -pid "$DAEMON_PID" attach

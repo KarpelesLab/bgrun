@@ -123,7 +123,7 @@ func TestVTYSignalDelivery(t *testing.T) {
 }
 
 // Note: Interactive Ctrl-C testing (sending 0x03 via PTY) requires
-// a full terminal setup and is better tested manually with bgctl attach
+// a full terminal setup and is better tested manually with bgrun -ctl attach
 
 func TestVTYKillProcess(t *testing.T) {
 	tmpDir := t.TempDir()
