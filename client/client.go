@@ -146,26 +146,32 @@ func (c *Client) Wait(timeoutSecs uint32, waitType byte) (byte, error) {
 		return 0, fmt.Errorf("failed to send wait: %w", err)
 	}
 
-	// Wait for response
-	msg, err := protocol.ReadMessage(c.conn)
-	if err != nil {
-		return 0, fmt.Errorf("failed to read response: %w", err)
-	}
+	// Wait for response (may receive MsgProcessExit first)
+	for {
+		msg, err := protocol.ReadMessage(c.conn)
+		if err != nil {
+			return 0, fmt.Errorf("failed to read response: %w", err)
+		}
 
-	if msg.Type == protocol.MsgError {
-		return 0, fmt.Errorf("server error: %s", string(msg.Payload))
-	}
+		switch msg.Type {
+		case protocol.MsgError:
+			return 0, fmt.Errorf("server error: %s", string(msg.Payload))
 
-	if msg.Type != protocol.MsgWaitResponse {
-		return 0, fmt.Errorf("unexpected response type: 0x%02X", msg.Type)
-	}
+		case protocol.MsgWaitResponse:
+			status, err := protocol.ParseWaitResponse(msg.Payload)
+			if err != nil {
+				return 0, fmt.Errorf("failed to parse wait response: %w", err)
+			}
+			return status, nil
 
-	status, err := protocol.ParseWaitResponse(msg.Payload)
-	if err != nil {
-		return 0, fmt.Errorf("failed to parse wait response: %w", err)
-	}
+		case protocol.MsgProcessExit, protocol.MsgOutput:
+			// Ignore these messages and keep reading
+			continue
 
-	return status, nil
+		default:
+			return 0, fmt.Errorf("unexpected response type: 0x%02X", msg.Type)
+		}
+	}
 }
 
 // Attach attaches to output streams

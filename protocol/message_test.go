@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bytes"
+	"fmt"
 	"testing"
 )
 
@@ -222,5 +223,186 @@ func TestBinarySafety(t *testing.T) {
 
 	if !bytes.Equal(msg.Payload, binaryData) {
 		t.Errorf("binary data not preserved: expected %v, got %v", binaryData, msg.Payload)
+	}
+}
+
+func TestWaitAPI(t *testing.T) {
+	tests := []struct {
+		name        string
+		timeoutSecs uint32
+		waitType    byte
+	}{
+		{
+			name:        "wait for exit with 10 second timeout",
+			timeoutSecs: 10,
+			waitType:    WaitTypeExit,
+		},
+		{
+			name:        "wait for foreground with 5 second timeout",
+			timeoutSecs: 5,
+			waitType:    WaitTypeForeground,
+		},
+		{
+			name:        "wait with zero timeout",
+			timeoutSecs: 0,
+			waitType:    WaitTypeExit,
+		},
+		{
+			name:        "wait with large timeout",
+			timeoutSecs: 3600,
+			waitType:    WaitTypeForeground,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Test ParseWait
+			payload := make([]byte, 5)
+			payload[0] = byte(tt.timeoutSecs >> 24)
+			payload[1] = byte(tt.timeoutSecs >> 16)
+			payload[2] = byte(tt.timeoutSecs >> 8)
+			payload[3] = byte(tt.timeoutSecs)
+			payload[4] = tt.waitType
+
+			parsedTimeout, parsedType, err := ParseWait(payload)
+			if err != nil {
+				t.Fatalf("ParseWait failed: %v", err)
+			}
+
+			if parsedTimeout != tt.timeoutSecs {
+				t.Errorf("timeout mismatch: expected %d, got %d", tt.timeoutSecs, parsedTimeout)
+			}
+
+			if parsedType != tt.waitType {
+				t.Errorf("wait type mismatch: expected %d, got %d", tt.waitType, parsedType)
+			}
+		})
+	}
+}
+
+func TestWaitResponse(t *testing.T) {
+	tests := []struct {
+		name   string
+		status byte
+	}{
+		{
+			name:   "completed",
+			status: WaitStatusCompleted,
+		},
+		{
+			name:   "timeout",
+			status: WaitStatusTimeout,
+		},
+		{
+			name:   "not applicable",
+			status: WaitStatusNotApplicable,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+
+			// Write wait response
+			if err := WriteWaitResponse(&buf, tt.status); err != nil {
+				t.Fatalf("WriteWaitResponse failed: %v", err)
+			}
+
+			// Read message
+			msg, err := ReadMessage(&buf)
+			if err != nil {
+				t.Fatalf("ReadMessage failed: %v", err)
+			}
+
+			if msg.Type != MsgWaitResponse {
+				t.Errorf("expected type %d, got %d", MsgWaitResponse, msg.Type)
+			}
+
+			// Parse wait response
+			parsedStatus, err := ParseWaitResponse(msg.Payload)
+			if err != nil {
+				t.Fatalf("ParseWaitResponse failed: %v", err)
+			}
+
+			if parsedStatus != tt.status {
+				t.Errorf("status mismatch: expected %d, got %d", tt.status, parsedStatus)
+			}
+		})
+	}
+}
+
+func TestParseWaitErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload []byte
+	}{
+		{
+			name:    "empty payload",
+			payload: []byte{},
+		},
+		{
+			name:    "too short",
+			payload: []byte{0x00, 0x00, 0x00},
+		},
+		{
+			name:    "too long",
+			payload: []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, err := ParseWait(tt.payload)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+		})
+	}
+}
+
+func TestParseWaitResponseErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload []byte
+	}{
+		{
+			name:    "empty payload",
+			payload: []byte{},
+		},
+		{
+			name:    "too long",
+			payload: []byte{0x00, 0x01},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseWaitResponse(tt.payload)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+		})
+	}
+}
+
+func TestWriteError(t *testing.T) {
+	var buf bytes.Buffer
+
+	testErr := fmt.Errorf("test error message")
+	if err := WriteError(&buf, testErr); err != nil {
+		t.Fatalf("WriteError failed: %v", err)
+	}
+
+	msg, err := ReadMessage(&buf)
+	if err != nil {
+		t.Fatalf("ReadMessage failed: %v", err)
+	}
+
+	if msg.Type != MsgError {
+		t.Errorf("expected type %d, got %d", MsgError, msg.Type)
+	}
+
+	if string(msg.Payload) != testErr.Error() {
+		t.Errorf("error message mismatch: expected %q, got %q", testErr.Error(), string(msg.Payload))
 	}
 }
