@@ -335,9 +335,30 @@ func (d *Daemon) stop() {
 	}
 	d.mu.Unlock()
 
+	// Close pipes
+	if d.stdinPipe != nil {
+		d.stdinPipe.Close()
+	}
+	if d.stdoutPipe != nil {
+		d.stdoutPipe.Close()
+	}
+	if d.stderrPipe != nil {
+		d.stderrPipe.Close()
+	}
+
 	// Close log file
 	if d.logFile != nil {
 		d.logFile.Close()
+	}
+
+	// Close VTY PTY
+	if d.vtyPty != nil {
+		d.vtyPty.Close()
+	}
+
+	// Clean up socket file
+	if d.socketPath != "" {
+		os.Remove(d.socketPath)
 	}
 
 	// Wait for process to exit (if still running)

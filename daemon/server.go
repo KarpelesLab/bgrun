@@ -333,7 +333,7 @@ func (d *Daemon) handleStdout() {
 		}
 
 		if err != nil {
-			if err != io.EOF {
+			if err != io.EOF && !strings.Contains(err.Error(), "file already closed") {
 				log.Printf("Error reading stdout: %v", err)
 			}
 			return
@@ -365,7 +365,7 @@ func (d *Daemon) handleStderr() {
 		}
 
 		if err != nil {
-			if err != io.EOF {
+			if err != io.EOF && !strings.Contains(err.Error(), "file already closed") {
 				log.Printf("Error reading stderr: %v", err)
 			}
 			return
