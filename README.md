@@ -16,7 +16,6 @@ A lightweight background process manager with a clean binary-safe socket API for
 
 ```bash
 go build -o bgrun .
-go build -o bgctl ./cmd/bgctl/
 ```
 
 ## Quick Start
@@ -24,20 +23,24 @@ go build -o bgctl ./cmd/bgctl/
 ### Starting a Background Process
 
 ```bash
-# Run a simple command
+# Run in foreground (shows runtime info)
 ./bgrun sleep 100
+
+# Run in background (returns daemon PID for control)
+PID=$(./bgrun -background sleep 100)
+echo "Background process PID: $PID"
 
 # Run with stdin streaming enabled
 ./bgrun -stdin stream bash
 
 # Run in VTY mode (for interactive programs)
-./bgrun -vty -stdin stream vim myfile.txt
+./bgrun -vty vim myfile.txt
 
 # Custom I/O configuration
 ./bgrun -stdout /tmp/myapp.log -stderr /tmp/myapp.err myapp
 ```
 
-After starting, bgrun will print the runtime directory and control socket path:
+When starting in foreground mode, bgrun prints the runtime directory and control socket path:
 
 ```
 Process started successfully
@@ -45,27 +48,37 @@ Runtime directory: /run/user/1000/12345
 Control socket: /run/user/1000/12345/control.sock
 ```
 
+When using `-background`, bgrun outputs only the daemon PID, which you can use with `-ctl` commands.
+
 ### Connecting to a Running Process
 
-Use `bgctl` to interact with a running process:
+Use `bgrun -ctl` to interact with a running process:
 
 ```bash
-# Check process status
-./bgctl -socket /run/user/1000/12345/control.sock status
+# Check process status (using PID)
+./bgrun -ctl -pid 12345 status
 
 # Attach to process output (stdout/stderr)
-./bgctl -socket /run/user/1000/12345/control.sock attach
+./bgrun -ctl -pid 12345 attach
+
+# Wait for process to exit (with 30 second timeout)
+./bgrun -ctl -pid 12345 wait exit 30
+
+# Wait for foreground control to return (VTY mode)
+./bgrun -ctl -pid 12345 wait foreground 60
 
 # Send a signal to the process
-./bgctl -socket /run/user/1000/12345/control.sock signal 15  # SIGTERM
+./bgrun -ctl -pid 12345 signal 15  # SIGTERM
 
 # Shutdown the daemon
-./bgctl -socket /run/user/1000/12345/control.sock shutdown
+./bgrun -ctl -pid 12345 shutdown
 ```
+
+The PID is the daemon process ID printed by bgrun (or captured with `-background`).
 
 ## Command Line Options
 
-### bgrun
+### Daemon Mode
 
 ```
 bgrun [options] <command> [args...]
@@ -75,6 +88,7 @@ Options:
   -stdout <mode>  stdout mode: null, log, or file path (default: log)
   -stderr <mode>  stderr mode: null, log, or file path (default: log)
   -vty            run in VTY mode (for interactive programs)
+  -background     run daemon in background (outputs PID)
   -help           show help message
 ```
 
@@ -85,16 +99,17 @@ Options:
 - **log**: Write to `output.log` in runtime directory (stdout/stderr only)
 - **<filepath>**: Read from or write to specified file
 
-### bgctl
+### Control Mode
 
 ```
-bgctl -socket <path> <command> [args...]
+bgrun -ctl -pid <daemon-pid> <command> [args...]
 
 Commands:
-  status              Show process status
-  attach              Attach to process output
-  signal <signum>     Send signal to process
-  shutdown            Shutdown the daemon
+  status                       Show process status
+  attach                       Attach to process output
+  wait <exit|foreground> <sec> Wait for condition with timeout
+  signal <signum>              Send signal to process
+  shutdown                     Shutdown the daemon
 ```
 
 ## Socket Protocol
@@ -183,45 +198,52 @@ if err := c.CloseStdin(); err != nil {
 ### Running a Database Server
 
 ```bash
-./bgrun -stdout /var/log/postgres.log -stderr /var/log/postgres.err \
-    postgres -D /var/lib/postgresql/data
+PID=$(./bgrun -background -stdout /var/log/postgres.log -stderr /var/log/postgres.err \
+    postgres -D /var/lib/postgresql/data)
+echo "PostgreSQL daemon PID: $PID"
+
+# Check status
+./bgrun -ctl -pid $PID status
 ```
 
 ### Interactive Shell Session
 
 ```bash
-./bgrun -vty bash
+PID=$(./bgrun -background -vty bash)
 
 # In another terminal, attach interactively:
-./bgctl -socket /run/user/1000/<pid>/control.sock attach
+./bgrun -ctl -pid $PID attach
 ```
 
 ### Editing Files Remotely
 
 ```bash
 # Start vim in background
-./bgrun -vty vim /path/to/file.txt
+PID=$(./bgrun -background -vty vim /path/to/file.txt)
 
 # Attach from anywhere (even over SSH)
-./bgctl -socket /run/user/1000/<pid>/control.sock attach
+./bgrun -ctl -pid $PID attach
 ```
 
 ### Long-Running Build Process
 
 ```bash
-./bgrun -stdout /tmp/build.log make all
+PID=$(./bgrun -background -stdout /tmp/build.log make all)
 
 # Monitor progress from another terminal:
-./bgctl -socket /run/user/1000/<pid>/control.sock attach
+./bgrun -ctl -pid $PID attach
+
+# Wait for build to complete
+./bgrun -ctl -pid $PID wait exit 3600  # 1 hour timeout
 ```
 
 ### Background Script with Input
 
 ```bash
-./bgrun -stdin stream python3 process_data.py
+PID=$(./bgrun -background -stdin stream python3 process_data.py)
 
 # Send data from another process:
-echo "data" | nc -U /run/user/1000/<pid>/control.sock
+echo "data" | nc -U /run/user/1000/$PID/control.sock
 ```
 
 ## Runtime Directory Structure
@@ -255,6 +277,7 @@ import "github.com/KarpelesLab/bgrun/client"
 - `WriteStdin(data []byte) error` - Write to stdin
 - `CloseStdin() error` - Close stdin pipe
 - `SendSignal(sig syscall.Signal) error` - Send signal
+- `Wait(timeoutSecs uint32, waitType byte) (byte, error)` - Wait for process exit or foreground
 - `Attach(streams byte) error` - Attach to output streams
 - `Detach() error` - Detach from output
 - `Shutdown() error` - Shutdown daemon
@@ -295,11 +318,11 @@ VTY (virtual terminal) support is fully implemented for interactive programs tha
 
 ### Attaching to Interactive Sessions
 
-When you attach to a VTY-enabled process, `bgctl` automatically detects it and provides full interactive terminal support:
+When you attach to a VTY-enabled process, `bgrun -ctl` automatically detects it and provides full interactive terminal support:
 
 ```bash
 # Attach interactively (automatic raw mode, resize handling)
-./bgctl -socket /run/user/1000/<pid>/control.sock attach
+./bgrun -ctl -pid <daemon-pid> attach
 
 # Your terminal will be in raw mode and fully interactive
 # Terminal resize events are automatically forwarded to the process
