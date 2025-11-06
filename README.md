@@ -264,6 +264,8 @@ Or if `$XDG_RUNTIME_DIR` is not set:
 
 ## Client Library
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/KarpelesLab/bgrun/client.svg)](https://pkg.go.dev/github.com/KarpelesLab/bgrun/client)
+
 The Go client library provides a simple API for interacting with bgrun processes:
 
 ```go
