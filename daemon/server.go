@@ -2,11 +2,13 @@ package daemon
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
+	"strings"
 	"syscall"
 
 	"github.com/KarpelesLab/bgrun/protocol"
@@ -68,6 +70,22 @@ func (d *Daemon) acceptConnections(listener net.Listener) {
 	}
 }
 
+// isNormalDisconnect checks if an error is a normal client disconnect
+func isNormalDisconnect(err error) bool {
+	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	// Check for connection reset by peer (ECONNRESET)
+	if strings.Contains(err.Error(), "connection reset by peer") {
+		return true
+	}
+	// Check for use of closed network connection
+	if strings.Contains(err.Error(), "use of closed network connection") {
+		return true
+	}
+	return false
+}
+
 // handleClient handles a client connection
 func (d *Daemon) handleClient(conn net.Conn) {
 	defer func() {
@@ -80,7 +98,7 @@ func (d *Daemon) handleClient(conn net.Conn) {
 	for {
 		msg, err := protocol.ReadMessage(conn)
 		if err != nil {
-			if err != io.EOF {
+			if !isNormalDisconnect(err) {
 				log.Printf("Read error from client: %v", err)
 			}
 			return
