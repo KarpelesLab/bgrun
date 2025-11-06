@@ -1,6 +1,6 @@
-# Binaries
-bgrun
-bgctl
+# Binaries (root level only)
+/bgrun
+/bgctl
 *.exe
 *.exe~
 *.dll
