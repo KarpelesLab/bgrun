@@ -190,9 +190,19 @@ if err := c.CloseStdin(); err != nil {
 ### Interactive Shell Session
 
 ```bash
-./bgrun -vty -stdin stream -stdout log -stderr log bash
+./bgrun -vty bash
 
-# In another terminal:
+# In another terminal, attach interactively:
+./bgctl -socket /run/user/1000/<pid>/control.sock attach
+```
+
+### Editing Files Remotely
+
+```bash
+# Start vim in background
+./bgrun -vty vim /path/to/file.txt
+
+# Attach from anywhere (even over SSH)
 ./bgctl -socket /run/user/1000/<pid>/control.sock attach
 ```
 
@@ -268,12 +278,42 @@ go test -v . -run Integration
 
 ## VTY Support
 
-VTY (virtual terminal) support is planned for interactive programs that require terminal control.
+VTY (virtual terminal) support is fully implemented for interactive programs that require terminal control.
+
+### Running Interactive Programs
 
 ```bash
-# Coming soon
-./bgrun -vty -stdin stream vim myfile.txt
+# Start vim in VTY mode
+./bgrun -vty vim myfile.txt
+
+# Start an interactive bash session
+./bgrun -vty bash
+
+# Start any interactive program
+./bgrun -vty htop
 ```
+
+### Attaching to Interactive Sessions
+
+When you attach to a VTY-enabled process, `bgctl` automatically detects it and provides full interactive terminal support:
+
+```bash
+# Attach interactively (automatic raw mode, resize handling)
+./bgctl -socket /run/user/1000/<pid>/control.sock attach
+
+# Your terminal will be in raw mode and fully interactive
+# Terminal resize events are automatically forwarded to the process
+# Press Ctrl+C to detach (or the program will exit normally)
+```
+
+### Features
+
+- **Automatic PTY allocation**: Programs run with a pseudo-terminal
+- **Terminal size detection**: Initial terminal size is set correctly
+- **Resize handling**: SIGWINCH signals automatically resize the remote PTY
+- **Raw mode**: Client terminal switches to raw mode for full interactivity
+- **Bidirectional I/O**: Full stdin/stdout streaming with binary safety
+- **Multiple attach**: Multiple clients can attach to view output (one active controller)
 
 ## Security
 

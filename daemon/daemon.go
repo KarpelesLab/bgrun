@@ -48,7 +48,7 @@ type Config struct {
 
 // Daemon represents a background process manager
 type Daemon struct {
-	config    *Config
+	config     *Config
 	runtimeDir string
 	socketPath string
 	logPath    string
@@ -64,10 +64,12 @@ type Daemon struct {
 	stdoutPipe io.ReadCloser
 	stderrPipe io.ReadCloser
 
+	vtyPty *os.File // PTY for VTY mode
+
 	logFile *os.File
 
-	mu       sync.RWMutex
-	clients  map[net.Conn]*client
+	mu      sync.RWMutex
+	clients map[net.Conn]*client
 
 	closeCh chan struct{}
 	doneCh  chan struct{}
@@ -159,8 +161,12 @@ func (d *Daemon) Start() error {
 	}
 
 	// Start output handlers
-	go d.handleStdout()
-	go d.handleStderr()
+	if d.config.UseVTY {
+		go d.handleVTYOutput()
+	} else {
+		go d.handleStdout()
+		go d.handleStderr()
+	}
 	go d.waitForProcess()
 
 	return nil
@@ -168,6 +174,13 @@ func (d *Daemon) Start() error {
 
 // startProcess starts the managed process
 func (d *Daemon) startProcess() error {
+	// Use VTY mode if enabled
+	if d.config.UseVTY {
+		d.startedAt = time.Now()
+		return d.startProcessVTY()
+	}
+
+	// Standard mode
 	d.cmd = exec.Command(d.config.Command[0], d.config.Command[1:]...)
 
 	// Setup stdin

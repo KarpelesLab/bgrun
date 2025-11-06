@@ -9,6 +9,7 @@ import (
 
 	"github.com/KarpelesLab/bgrun/client"
 	"github.com/KarpelesLab/bgrun/protocol"
+	"github.com/KarpelesLab/bgrun/terminal"
 )
 
 var (
@@ -107,6 +108,27 @@ func cmdStatus(c *client.Client) error {
 }
 
 func cmdAttach(c *client.Client) error {
+	// Check if we're running in a terminal
+	if !terminal.IsTerminal(int(os.Stdin.Fd())) {
+		return cmdAttachNonInteractive(c)
+	}
+
+	// Get process status to check if it's VTY mode
+	status, err := c.GetStatus()
+	if err != nil {
+		return err
+	}
+
+	if status.HasVTY {
+		// Interactive VTY mode
+		return cmdAttachInteractive(c)
+	}
+
+	// Non-VTY mode (just display output)
+	return cmdAttachNonInteractive(c)
+}
+
+func cmdAttachNonInteractive(c *client.Client) error {
 	// Attach to both stdout and stderr
 	if err := c.Attach(protocol.StreamBoth); err != nil {
 		return err
@@ -129,6 +151,96 @@ func cmdAttach(c *client.Client) error {
 			fmt.Printf("\n---\nProcess exited with code %d\n", exitCode)
 		},
 	)
+}
+
+func cmdAttachInteractive(c *client.Client) error {
+	// Put terminal in raw mode
+	fd := int(os.Stdin.Fd())
+	state, err := terminal.MakeRaw(fd)
+	if err != nil {
+		return fmt.Errorf("failed to make terminal raw: %w", err)
+	}
+	defer state.Restore()
+
+	// Get current terminal size
+	rows, cols, err := terminal.GetSize(fd)
+	if err != nil {
+		return fmt.Errorf("failed to get terminal size: %w", err)
+	}
+
+	// Attach to output
+	if err := c.Attach(protocol.StreamBoth); err != nil {
+		return err
+	}
+
+	// Send initial resize
+	if err := c.Resize(uint16(rows), uint16(cols)); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to resize terminal: %v\n", err)
+	}
+
+	// Watch for resize signals
+	resizeCh := terminal.WatchResize()
+	defer terminal.StopWatchingResize(resizeCh)
+
+	// Channel for errors
+	errCh := make(chan error, 2)
+	doneCh := make(chan struct{})
+
+	// Goroutine to read from stdin and send to server
+	go func() {
+		buf := make([]byte, 1024)
+		for {
+			n, err := os.Stdin.Read(buf)
+			if n > 0 {
+				if err := c.WriteStdin(buf[:n]); err != nil {
+					errCh <- fmt.Errorf("failed to write stdin: %w", err)
+					return
+				}
+			}
+			if err != nil {
+				if err != io.EOF {
+					errCh <- fmt.Errorf("failed to read stdin: %w", err)
+				}
+				return
+			}
+		}
+	}()
+
+	// Goroutine to read from server and write to stdout
+	go func() {
+		err := c.ReadMessages(
+			func(stream byte, data []byte) error {
+				os.Stdout.Write(data)
+				return nil
+			},
+			func(exitCode int) {
+				close(doneCh)
+			},
+		)
+		if err != nil && err != io.EOF {
+			errCh <- err
+		}
+	}()
+
+	// Main loop: handle resize events
+	for {
+		select {
+		case <-resizeCh:
+			rows, cols, err := terminal.GetSize(fd)
+			if err == nil {
+				c.Resize(uint16(rows), uint16(cols))
+			}
+
+		case err := <-errCh:
+			state.Restore()
+			return err
+
+		case <-doneCh:
+			state.Restore()
+			fmt.Println("\r\n[Process exited]")
+			return nil
+		}
+	}
 }
 
 func cmdSignal(c *client.Client, sig syscall.Signal) error {

@@ -104,6 +104,35 @@ func (c *Client) SendSignal(sig syscall.Signal) error {
 	return nil
 }
 
+// Resize resizes the VTY terminal
+func (c *Client) Resize(rows, cols uint16) error {
+	payload := make([]byte, 4)
+	payload[0] = byte(rows >> 8)
+	payload[1] = byte(rows)
+	payload[2] = byte(cols >> 8)
+	payload[3] = byte(cols)
+
+	if err := protocol.WriteMessage(c.conn, protocol.MsgResize, payload); err != nil {
+		return fmt.Errorf("failed to send resize: %w", err)
+	}
+
+	// Wait for acknowledgment
+	msg, err := protocol.ReadMessage(c.conn)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if msg.Type == protocol.MsgError {
+		return fmt.Errorf("server error: %s", string(msg.Payload))
+	}
+
+	if msg.Type != protocol.MsgResizeResponse {
+		return fmt.Errorf("unexpected response type: 0x%02X", msg.Type)
+	}
+
+	return nil
+}
+
 // Attach attaches to output streams
 // streams can be StreamStdout, StreamStderr, or StreamBoth
 func (c *Client) Attach(streams byte) error {

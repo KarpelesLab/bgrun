@@ -138,6 +138,12 @@ func (d *Daemon) handleStatus(conn net.Conn) error {
 
 // handleStdin writes data to the process stdin
 func (d *Daemon) handleStdin(data []byte) error {
+	// In VTY mode, write to PTY
+	if d.config.UseVTY {
+		return d.writeVTY(data)
+	}
+
+	// Standard mode
 	if d.stdinPipe == nil {
 		return fmt.Errorf("stdin is not available for streaming")
 	}
@@ -188,8 +194,10 @@ func (d *Daemon) handleResize(conn net.Conn, payload []byte) error {
 	rows := binary.BigEndian.Uint16(payload[0:2])
 	cols := binary.BigEndian.Uint16(payload[2:4])
 
-	// TODO: Implement VTY resize
-	log.Printf("Resize request: %dx%d (not yet implemented)", rows, cols)
+	// Resize the PTY
+	if err := d.resizeVTY(rows, cols); err != nil {
+		return err
+	}
 
 	// Send acknowledgment
 	return protocol.WriteMessage(conn, protocol.MsgResizeResponse, nil)

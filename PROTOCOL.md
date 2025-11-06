@@ -20,7 +20,7 @@ All messages follow this structure:
 - `0x01` STATUS - Get process status
 - `0x02` STDIN - Write data to stdin (payload: binary data)
 - `0x03` SIGNAL - Send signal to process (payload: 1 byte signal number)
-- `0x04` RESIZE - Resize VTY (payload: 4 bytes: uint16 rows, uint16 cols)
+- `0x04` RESIZE - Resize VTY (payload: 4 bytes: uint16 rows big-endian, uint16 cols big-endian)
 - `0x05` ATTACH - Attach to output stream (payload: 1 byte stream selector: 0x01=stdout, 0x02=stderr, 0x03=both)
 - `0x06` DETACH - Stop receiving output
 - `0x07` CLOSE_STDIN - Close stdin pipe
