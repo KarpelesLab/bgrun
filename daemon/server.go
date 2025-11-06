@@ -122,6 +122,9 @@ func (d *Daemon) handleMessage(conn net.Conn, msg *protocol.Message) error {
 	case protocol.MsgCloseStdin:
 		return d.handleCloseStdin(conn)
 
+	case protocol.MsgWait:
+		return d.handleWait(conn, msg.Payload)
+
 	case protocol.MsgShutdown:
 		return d.handleShutdown(conn)
 
@@ -253,6 +256,24 @@ func (d *Daemon) handleCloseStdin(conn net.Conn) error {
 
 	// Send acknowledgment
 	return protocol.WriteMessage(conn, protocol.MsgStatusResponse, []byte(`{"status":"stdin closed"}`))
+}
+
+// handleWait waits for a condition with timeout
+func (d *Daemon) handleWait(conn net.Conn, payload []byte) error {
+	timeoutSecs, waitType, err := protocol.ParseWait(payload)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("Wait request: timeout=%ds, type=%d", timeoutSecs, waitType)
+
+	// Execute the wait (this may block)
+	status := d.waitForCondition(timeoutSecs, waitType)
+
+	log.Printf("Wait completed with status: %d", status)
+
+	// Send response
+	return protocol.WriteWaitResponse(conn, status)
 }
 
 // handleShutdown shuts down the daemon

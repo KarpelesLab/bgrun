@@ -291,3 +291,215 @@ func TestVTYResizeWhileRunning(t *testing.T) {
 	status := d.GetStatus()
 	t.Logf("Process status: running=%v, exitcode=%v", status.Running, status.ExitCode)
 }
+
+func TestWaitForExit(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Start a process that will run for 2 seconds
+	config := &Config{
+		Command:    []string{"sleep", "2"},
+		UseVTY:     false, // Test works for both VTY and non-VTY
+		RuntimeDir: tmpDir,
+	}
+
+	d, err := New(config)
+	if err != nil {
+		t.Fatalf("Failed to create daemon: %v", err)
+	}
+
+	if err := d.Start(); err != nil {
+		t.Fatalf("Failed to start daemon: %v", err)
+	}
+	defer d.stop()
+
+	time.Sleep(200 * time.Millisecond)
+
+	// Test 1: Wait with sufficient timeout (should complete)
+	conn, err := net.Dial("unix", d.SocketPath())
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	// Wait for exit with 5 second timeout (process will exit in ~2 seconds)
+	payload := make([]byte, 5)
+	binary.BigEndian.PutUint32(payload[0:4], 5) // 5 second timeout
+	payload[4] = protocol.WaitTypeExit
+
+	if err := protocol.WriteMessage(conn, protocol.MsgWait, payload); err != nil {
+		t.Fatalf("Failed to send wait: %v", err)
+	}
+
+	// Read response (may receive MsgProcessExit first, ignore it and wait for MsgWaitResponse)
+	var status byte
+	for {
+		msg, err := protocol.ReadMessage(conn)
+		if err != nil {
+			t.Fatalf("Failed to read wait response: %v", err)
+		}
+
+		if msg.Type == protocol.MsgError {
+			t.Fatalf("Wait error: %s", string(msg.Payload))
+		}
+
+		if msg.Type == protocol.MsgProcessExit {
+			// Ignore process exit message and continue reading
+			continue
+		}
+
+		if msg.Type == protocol.MsgWaitResponse {
+			status, err = protocol.ParseWaitResponse(msg.Payload)
+			if err != nil {
+				t.Fatalf("Failed to parse wait response: %v", err)
+			}
+			break
+		}
+
+		t.Fatalf("Unexpected message type: 0x%02X", msg.Type)
+	}
+
+	if status != protocol.WaitStatusCompleted {
+		t.Errorf("Expected WaitStatusCompleted, got %d", status)
+	}
+
+	t.Log("Wait for exit completed successfully")
+}
+
+func TestWaitForExitTimeout(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Start a process that will run for 10 seconds
+	config := &Config{
+		Command:    []string{"sleep", "10"},
+		UseVTY:     false,
+		RuntimeDir: tmpDir,
+	}
+
+	d, err := New(config)
+	if err != nil {
+		t.Fatalf("Failed to create daemon: %v", err)
+	}
+
+	if err := d.Start(); err != nil {
+		t.Fatalf("Failed to start daemon: %v", err)
+	}
+	defer d.stop()
+
+	time.Sleep(200 * time.Millisecond)
+
+	conn, err := net.Dial("unix", d.SocketPath())
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	// Wait for exit with 1 second timeout (process will still be running)
+	payload := make([]byte, 5)
+	binary.BigEndian.PutUint32(payload[0:4], 1) // 1 second timeout
+	payload[4] = protocol.WaitTypeExit
+
+	if err := protocol.WriteMessage(conn, protocol.MsgWait, payload); err != nil {
+		t.Fatalf("Failed to send wait: %v", err)
+	}
+
+	// Read response
+	msg, err := protocol.ReadMessage(conn)
+	if err != nil {
+		t.Fatalf("Failed to read wait response: %v", err)
+	}
+
+	if msg.Type != protocol.MsgWaitResponse {
+		t.Fatalf("Expected wait response, got 0x%02X", msg.Type)
+	}
+
+	status, err := protocol.ParseWaitResponse(msg.Payload)
+	if err != nil {
+		t.Fatalf("Failed to parse wait response: %v", err)
+	}
+
+	if status != protocol.WaitStatusTimeout {
+		t.Errorf("Expected WaitStatusTimeout, got %d", status)
+	}
+
+	t.Log("Wait timeout test passed")
+}
+
+func TestWaitForForeground(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Start bash in VTY mode
+	config := &Config{
+		Command:    []string{"bash"},
+		UseVTY:     true,
+		RuntimeDir: tmpDir,
+	}
+
+	d, err := New(config)
+	if err != nil {
+		t.Fatalf("Failed to create daemon: %v", err)
+	}
+
+	if err := d.Start(); err != nil {
+		t.Fatalf("Failed to start daemon: %v", err)
+	}
+	defer d.stop()
+
+	time.Sleep(200 * time.Millisecond)
+
+	conn, err := net.Dial("unix", d.SocketPath())
+	if err != nil {
+		t.Fatalf("Failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	// Start a background sleep command in bash
+	// This will put sleep in the foreground temporarily
+	cmd := "sleep 2 &\n"
+	if err := protocol.WriteMessage(conn, protocol.MsgStdin, []byte(cmd)); err != nil {
+		t.Fatalf("Failed to write stdin: %v", err)
+	}
+
+	// Give bash time to start the background process
+	time.Sleep(300 * time.Millisecond)
+
+	// At this point, bash should have regained foreground control
+	// (since we used & to background the sleep command)
+
+	// Wait for foreground control (bash should already have it)
+	payload := make([]byte, 5)
+	binary.BigEndian.PutUint32(payload[0:4], 5) // 5 second timeout
+	payload[4] = protocol.WaitTypeForeground
+
+	if err := protocol.WriteMessage(conn, protocol.MsgWait, payload); err != nil {
+		t.Fatalf("Failed to send wait: %v", err)
+	}
+
+	// Read response
+	msg, err := protocol.ReadMessage(conn)
+	if err != nil {
+		t.Fatalf("Failed to read wait response: %v", err)
+	}
+
+	if msg.Type != protocol.MsgWaitResponse {
+		t.Fatalf("Expected wait response, got 0x%02X", msg.Type)
+	}
+
+	status, err := protocol.ParseWaitResponse(msg.Payload)
+	if err != nil {
+		t.Fatalf("Failed to parse wait response: %v", err)
+	}
+
+	if status != protocol.WaitStatusCompleted {
+		t.Errorf("Expected WaitStatusCompleted, got %d", status)
+	}
+
+	t.Log("Wait for foreground completed successfully")
+
+	// Clean up: send Ctrl-D (EOF) to bash
+	if err := protocol.WriteMessage(conn, protocol.MsgStdin, []byte{0x04}); err != nil {
+		t.Logf("Failed to write EOF: %v", err)
+	}
+
+	// Give bash a moment to exit gracefully
+	time.Sleep(200 * time.Millisecond)
+}

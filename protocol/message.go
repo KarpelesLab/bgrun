@@ -19,6 +19,7 @@ const (
 	MsgAttach     MessageType = 0x05
 	MsgDetach     MessageType = 0x06
 	MsgCloseStdin MessageType = 0x07
+	MsgWait       MessageType = 0x08
 	MsgShutdown   MessageType = 0x10
 )
 
@@ -28,6 +29,7 @@ const (
 	MsgOutput         MessageType = 0x81
 	MsgSignalResponse MessageType = 0x82
 	MsgResizeResponse MessageType = 0x83
+	MsgWaitResponse   MessageType = 0x88
 	MsgError          MessageType = 0x8F
 	MsgProcessExit    MessageType = 0x90
 )
@@ -37,6 +39,19 @@ const (
 	StreamStdout byte = 0x01
 	StreamStderr byte = 0x02
 	StreamBoth   byte = 0x03
+)
+
+// Wait types
+const (
+	WaitTypeExit       byte = 0x00 // Wait for process to exit
+	WaitTypeForeground byte = 0x01 // Wait for foreground control (VTY only)
+)
+
+// Wait result status
+const (
+	WaitStatusCompleted     byte = 0x00 // Wait condition met
+	WaitStatusTimeout       byte = 0x01 // Timeout occurred
+	WaitStatusNotApplicable byte = 0x02 // Wait type not applicable (e.g., foreground wait on non-VTY)
 )
 
 // Message represents a protocol message
@@ -166,4 +181,27 @@ func ParseProcessExit(payload []byte) (int, error) {
 	}
 	exitCode := int(binary.BigEndian.Uint32(payload))
 	return exitCode, nil
+}
+
+// WriteWaitResponse writes a wait response message
+func WriteWaitResponse(w io.Writer, status byte) error {
+	return WriteMessage(w, MsgWaitResponse, []byte{status})
+}
+
+// ParseWait parses a wait message payload
+func ParseWait(payload []byte) (timeoutSecs uint32, waitType byte, err error) {
+	if len(payload) != 5 {
+		return 0, 0, fmt.Errorf("invalid wait payload length: expected 5, got %d", len(payload))
+	}
+	timeoutSecs = binary.BigEndian.Uint32(payload[0:4])
+	waitType = payload[4]
+	return timeoutSecs, waitType, nil
+}
+
+// ParseWaitResponse parses a wait response payload
+func ParseWaitResponse(payload []byte) (byte, error) {
+	if len(payload) != 1 {
+		return 0, fmt.Errorf("invalid wait response payload length")
+	}
+	return payload[0], nil
 }

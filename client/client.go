@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
@@ -131,6 +132,40 @@ func (c *Client) Resize(rows, cols uint16) error {
 	}
 
 	return nil
+}
+
+// Wait waits for a condition to be met with timeout
+// waitType: protocol.WaitTypeExit (wait for process exit) or protocol.WaitTypeForeground (wait for foreground control)
+// Returns: protocol.WaitStatusCompleted, protocol.WaitStatusTimeout, or protocol.WaitStatusNotApplicable
+func (c *Client) Wait(timeoutSecs uint32, waitType byte) (byte, error) {
+	payload := make([]byte, 5)
+	binary.BigEndian.PutUint32(payload[0:4], timeoutSecs)
+	payload[4] = waitType
+
+	if err := protocol.WriteMessage(c.conn, protocol.MsgWait, payload); err != nil {
+		return 0, fmt.Errorf("failed to send wait: %w", err)
+	}
+
+	// Wait for response
+	msg, err := protocol.ReadMessage(c.conn)
+	if err != nil {
+		return 0, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if msg.Type == protocol.MsgError {
+		return 0, fmt.Errorf("server error: %s", string(msg.Payload))
+	}
+
+	if msg.Type != protocol.MsgWaitResponse {
+		return 0, fmt.Errorf("unexpected response type: 0x%02X", msg.Type)
+	}
+
+	status, err := protocol.ParseWaitResponse(msg.Payload)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse wait response: %w", err)
+	}
+
+	return status, nil
 }
 
 // Attach attaches to output streams

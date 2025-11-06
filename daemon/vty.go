@@ -6,6 +6,8 @@ import (
 	"log"
 	"os/exec"
 	"syscall"
+	"time"
+	"unsafe"
 
 	"github.com/creack/pty"
 )
@@ -113,4 +115,128 @@ func (d *Daemon) resizeVTY(rows, cols uint16) error {
 	log.Printf("PTY resized to %dx%d", rows, cols)
 
 	return nil
+}
+
+// getForegroundPgrp gets the foreground process group of the PTY
+func (d *Daemon) getForegroundPgrp() (int, error) {
+	if d.vtyPty == nil {
+		return 0, fmt.Errorf("VTY is not available")
+	}
+
+	// Use TIOCGPGRP ioctl to get the foreground process group
+	var pgrp int
+	_, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		d.vtyPty.Fd(),
+		syscall.TIOCGPGRP,
+		uintptr(unsafe.Pointer(&pgrp)),
+	)
+	if errno != 0 {
+		return 0, fmt.Errorf("failed to get foreground process group: %v", errno)
+	}
+
+	return pgrp, nil
+}
+
+// waitForCondition waits for a specific condition with timeout
+func (d *Daemon) waitForCondition(timeoutSecs uint32, waitType byte) byte {
+	// Import protocol package constants
+	const (
+		WaitTypeExit            byte = 0x00
+		WaitTypeForeground      byte = 0x01
+		WaitStatusCompleted     byte = 0x00
+		WaitStatusTimeout       byte = 0x01
+		WaitStatusNotApplicable byte = 0x02
+	)
+
+	switch waitType {
+	case WaitTypeExit:
+		// Wait for process to exit
+		return d.waitForExit(timeoutSecs)
+
+	case WaitTypeForeground:
+		// Wait for foreground control to return to main process
+		if d.vtyPty == nil {
+			return WaitStatusNotApplicable
+		}
+		return d.waitForForeground(timeoutSecs)
+
+	default:
+		return WaitStatusNotApplicable
+	}
+}
+
+// waitForExit waits for the process to exit
+func (d *Daemon) waitForExit(timeoutSecs uint32) byte {
+	const (
+		WaitStatusCompleted byte = 0x00
+		WaitStatusTimeout   byte = 0x01
+	)
+
+	// Create a channel to signal when process exits
+	done := make(chan struct{})
+	go func() {
+		for {
+			d.mu.RLock()
+			running := d.running
+			d.mu.RUnlock()
+
+			if !running {
+				close(done)
+				return
+			}
+
+			// Poll every 100ms
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+
+	// Wait for exit or timeout
+	select {
+	case <-done:
+		return WaitStatusCompleted
+	case <-time.After(time.Duration(timeoutSecs) * time.Second):
+		return WaitStatusTimeout
+	}
+}
+
+// waitForForeground waits for the foreground process group to return to main process
+func (d *Daemon) waitForForeground(timeoutSecs uint32) byte {
+	const (
+		WaitStatusCompleted byte = 0x00
+		WaitStatusTimeout   byte = 0x01
+	)
+
+	d.mu.RLock()
+	targetPid := d.pid
+	d.mu.RUnlock()
+
+	// Create a channel to signal when condition is met
+	done := make(chan struct{})
+	go func() {
+		for {
+			pgrp, err := d.getForegroundPgrp()
+			if err != nil {
+				// If we can't get the pgrp, wait a bit and try again
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+
+			if pgrp == targetPid {
+				close(done)
+				return
+			}
+
+			// Poll every 100ms
+			time.Sleep(100 * time.Millisecond)
+		}
+	}()
+
+	// Wait for foreground control or timeout
+	select {
+	case <-done:
+		return WaitStatusCompleted
+	case <-time.After(time.Duration(timeoutSecs) * time.Second):
+		return WaitStatusTimeout
+	}
 }

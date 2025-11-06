@@ -26,6 +26,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Commands:")
 		fmt.Fprintln(os.Stderr, "  status              Show process status")
 		fmt.Fprintln(os.Stderr, "  attach              Attach to process output")
+		fmt.Fprintln(os.Stderr, "  wait <type> <secs>  Wait for condition (type: exit|foreground)")
 		fmt.Fprintln(os.Stderr, "  signal <signum>     Send signal to process")
 		fmt.Fprintln(os.Stderr, "  shutdown            Shutdown the daemon")
 		os.Exit(1)
@@ -55,6 +56,23 @@ func main() {
 
 	case "attach":
 		if err := cmdAttach(c); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+
+	case "wait":
+		if len(args) < 3 {
+			fmt.Fprintln(os.Stderr, "Error: wait type and timeout required")
+			fmt.Fprintln(os.Stderr, "Usage: bgctl -socket <path> wait <exit|foreground> <seconds>")
+			os.Exit(1)
+		}
+		waitTypeStr := args[1]
+		var timeoutSecs uint32
+		if _, err := fmt.Sscanf(args[2], "%d", &timeoutSecs); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: invalid timeout: %v\n", err)
+			os.Exit(1)
+		}
+		if err := cmdWait(c, waitTypeStr, timeoutSecs); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -249,6 +267,38 @@ func cmdSignal(c *client.Client, sig syscall.Signal) error {
 	}
 
 	fmt.Printf("Signal %d sent successfully\n", sig)
+	return nil
+}
+
+func cmdWait(c *client.Client, waitTypeStr string, timeoutSecs uint32) error {
+	var waitType byte
+	switch waitTypeStr {
+	case "exit":
+		waitType = protocol.WaitTypeExit
+	case "foreground":
+		waitType = protocol.WaitTypeForeground
+	default:
+		return fmt.Errorf("invalid wait type: %s (must be 'exit' or 'foreground')", waitTypeStr)
+	}
+
+	fmt.Printf("Waiting for %s (timeout: %d seconds)...\n", waitTypeStr, timeoutSecs)
+
+	status, err := c.Wait(timeoutSecs, waitType)
+	if err != nil {
+		return err
+	}
+
+	switch status {
+	case protocol.WaitStatusCompleted:
+		fmt.Println("Wait completed successfully")
+	case protocol.WaitStatusTimeout:
+		fmt.Println("Wait timed out")
+	case protocol.WaitStatusNotApplicable:
+		fmt.Println("Wait type not applicable (e.g., foreground wait on non-VTY process)")
+	default:
+		fmt.Printf("Unknown wait status: %d\n", status)
+	}
+
 	return nil
 }
 

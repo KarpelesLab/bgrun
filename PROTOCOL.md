@@ -24,6 +24,8 @@ All messages follow this structure:
 - `0x05` ATTACH - Attach to output stream (payload: 1 byte stream selector: 0x01=stdout, 0x02=stderr, 0x03=both)
 - `0x06` DETACH - Stop receiving output
 - `0x07` CLOSE_STDIN - Close stdin pipe
+- `0x08` WAIT - Wait for process or foreground control (payload: 4 bytes timeout in seconds (uint32 big-endian), 1 byte wait type)
+  - Wait type: `0x00` = wait for process exit, `0x01` = wait for foreground control (VTY only)
 - `0x10` SHUTDOWN - Stop bgrun daemon
 
 ### Server → Client
@@ -35,6 +37,8 @@ All messages follow this structure:
   - Remaining bytes: output data
 - `0x82` SIGNAL_RESPONSE - Signal sent acknowledgment
 - `0x83` RESIZE_RESPONSE - Resize acknowledgment
+- `0x88` WAIT_RESPONSE - Wait operation result
+  - Payload: 1 byte status (0x00=completed, 0x01=timeout, 0x02=not applicable)
 - `0x8F` ERROR - Error response
   - Payload: UTF-8 error message
 - `0x90` PROCESS_EXIT - Process has exited
