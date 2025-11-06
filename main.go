@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"syscall"
 
-	"github.com/KarpelesLab/bgrun/client"
+	"github.com/KarpelesLab/bgrun/bgclient"
 	"github.com/KarpelesLab/bgrun/daemon"
 	"github.com/KarpelesLab/bgrun/protocol"
 	"github.com/KarpelesLab/bgrun/terminal"
@@ -129,7 +129,7 @@ func runControlMode() {
 		os.Exit(1)
 	}
 
-	c, err := client.Connect(socketPath)
+	c, err := bgclient.Connect(socketPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to connect: %v\n", err)
 		os.Exit(1)
@@ -351,7 +351,7 @@ func showHelp() {
 
 // Control command functions
 
-func cmdStatus(c *client.Client) error {
+func cmdStatus(c *bgclient.Client) error {
 	status, err := c.GetStatus()
 	if err != nil {
 		return err
@@ -372,7 +372,7 @@ func cmdStatus(c *client.Client) error {
 	return nil
 }
 
-func cmdAttach(c *client.Client) error {
+func cmdAttach(c *bgclient.Client) error {
 	// Check if we're running in a terminal
 	if !terminal.IsTerminal(int(os.Stdin.Fd())) {
 		return cmdAttachNonInteractive(c)
@@ -393,7 +393,7 @@ func cmdAttach(c *client.Client) error {
 	return cmdAttachNonInteractive(c)
 }
 
-func cmdAttachNonInteractive(c *client.Client) error {
+func cmdAttachNonInteractive(c *bgclient.Client) error {
 	// Attach to both stdout and stderr
 	if err := c.Attach(protocol.StreamBoth); err != nil {
 		return err
@@ -418,7 +418,7 @@ func cmdAttachNonInteractive(c *client.Client) error {
 	)
 }
 
-func cmdAttachInteractive(c *client.Client) error {
+func cmdAttachInteractive(c *bgclient.Client) error {
 	// Put terminal in raw mode
 	fd := int(os.Stdin.Fd())
 	state, err := terminal.MakeRaw(fd)
@@ -508,7 +508,7 @@ func cmdAttachInteractive(c *client.Client) error {
 	}
 }
 
-func cmdSignal(c *client.Client, sig syscall.Signal) error {
+func cmdSignal(c *bgclient.Client, sig syscall.Signal) error {
 	if err := c.SendSignal(sig); err != nil {
 		return err
 	}
@@ -517,7 +517,7 @@ func cmdSignal(c *client.Client, sig syscall.Signal) error {
 	return nil
 }
 
-func cmdWait(c *client.Client, waitTypeStr string, timeoutSecs uint32) error {
+func cmdWait(c *bgclient.Client, waitTypeStr string, timeoutSecs uint32) error {
 	var waitType byte
 	switch waitTypeStr {
 	case "exit":
@@ -549,7 +549,7 @@ func cmdWait(c *client.Client, waitTypeStr string, timeoutSecs uint32) error {
 	return nil
 }
 
-func cmdShutdown(c *client.Client) error {
+func cmdShutdown(c *bgclient.Client) error {
 	if err := c.Shutdown(); err != nil {
 		// Connection might close before we get a response, which is OK
 		if err != io.EOF {

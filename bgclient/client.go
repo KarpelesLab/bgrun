@@ -1,4 +1,4 @@
-package client
+package bgclient
 
 import (
 	"encoding/binary"

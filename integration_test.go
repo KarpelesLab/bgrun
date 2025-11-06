@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/KarpelesLab/bgrun/client"
+	"github.com/KarpelesLab/bgrun/bgclient"
 	"github.com/KarpelesLab/bgrun/daemon"
 	"github.com/KarpelesLab/bgrun/protocol"
 )
@@ -39,7 +39,7 @@ func TestClientServerIntegration(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect client
-	c, err := client.Connect(d.SocketPath())
+	c, err := bgclient.Connect(d.SocketPath())
 	if err != nil {
 		t.Fatalf("Failed to connect client: %v", err)
 	}
@@ -105,7 +105,7 @@ func TestClientAttachOutput(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect client
-	c, err := client.Connect(d.SocketPath())
+	c, err := bgclient.Connect(d.SocketPath())
 	if err != nil {
 		t.Fatalf("Failed to connect client: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestClientStdinWrite(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect client
-	c, err := client.Connect(d.SocketPath())
+	c, err := bgclient.Connect(d.SocketPath())
 	if err != nil {
 		t.Fatalf("Failed to connect client: %v", err)
 	}
@@ -278,13 +278,13 @@ func TestMultipleClients(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect multiple clients
-	c1, err := client.Connect(d.SocketPath())
+	c1, err := bgclient.Connect(d.SocketPath())
 	if err != nil {
 		t.Fatalf("Failed to connect client 1: %v", err)
 	}
 	defer c1.Close()
 
-	c2, err := client.Connect(d.SocketPath())
+	c2, err := bgclient.Connect(d.SocketPath())
 	if err != nil {
 		t.Fatalf("Failed to connect client 2: %v", err)
 	}

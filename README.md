@@ -127,9 +127,9 @@ The control socket uses a binary-safe, length-prefixed protocol. See [PROTOCOL.m
 ### Example: Checking Process Status
 
 ```go
-import "github.com/KarpelesLab/bgrun/client"
+import "github.com/KarpelesLab/bgrun/bgclient"
 
-c, err := client.Connect("/run/user/1000/12345/control.sock")
+c, err := bgclient.Connect("/run/user/1000/12345/control.sock")
 if err != nil {
     log.Fatal(err)
 }
@@ -146,7 +146,7 @@ fmt.Printf("PID: %d, Running: %v\n", status.PID, status.Running)
 ### Example: Streaming Output
 
 ```go
-c, err := client.Connect("/run/user/1000/12345/control.sock")
+c, err := bgclient.Connect("/run/user/1000/12345/control.sock")
 if err != nil {
     log.Fatal(err)
 }
@@ -176,7 +176,7 @@ err = c.ReadMessages(
 ### Example: Writing to stdin
 
 ```go
-c, err := client.Connect("/run/user/1000/12345/control.sock")
+c, err := bgclient.Connect("/run/user/1000/12345/control.sock")
 if err != nil {
     log.Fatal(err)
 }
@@ -264,12 +264,12 @@ Or if `$XDG_RUNTIME_DIR` is not set:
 
 ## Client Library
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/KarpelesLab/bgrun/client.svg)](https://pkg.go.dev/github.com/KarpelesLab/bgrun/client)
+[![Go Reference](https://pkg.go.dev/badge/github.com/KarpelesLab/bgrun/bgclient.svg)](https://pkg.go.dev/github.com/KarpelesLab/bgrun/bgclient)
 
 The Go client library provides a simple API for interacting with bgrun processes:
 
 ```go
-import "github.com/KarpelesLab/bgrun/client"
+import "github.com/KarpelesLab/bgrun/bgclient"
 ```
 
 ### API Methods

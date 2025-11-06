@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/KarpelesLab/bgrun/client"
+	"github.com/KarpelesLab/bgrun/bgclient"
 	"github.com/KarpelesLab/bgrun/protocol"
 )
 
@@ -18,7 +18,7 @@ func main() {
 	socketPath := os.Args[1]
 
 	// Connect to the daemon
-	c, err := client.Connect(socketPath)
+	c, err := bgclient.Connect(socketPath)
 	if err != nil {
 		log.Fatalf("Failed to connect: %v", err)
 	}
