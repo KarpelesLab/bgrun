@@ -134,6 +134,11 @@ func (d *Daemon) SocketPath() string {
 	return d.socketPath
 }
 
+// Done returns a channel that is closed when the process exits
+func (d *Daemon) Done() <-chan struct{} {
+	return d.doneCh
+}
+
 // Start starts the daemon and the managed process
 func (d *Daemon) Start() error {
 	// Create runtime directory
@@ -394,6 +399,9 @@ func (d *Daemon) waitForProcess() {
 
 	// Notify all clients of process exit
 	d.broadcastProcessExit(exitCode)
+
+	// Signal that the process has exited
+	close(d.doneCh)
 }
 
 // broadcastProcessExit sends process exit notification to all clients

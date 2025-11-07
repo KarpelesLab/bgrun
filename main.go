@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 
@@ -231,9 +233,18 @@ func runDaemonMode() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 
-	// Wait for signal
-	<-sigCh
-	log.Println("Received signal, shutting down...")
+	// Wait for either signal or process exit
+	select {
+	case <-sigCh:
+		log.Println("Received signal, shutting down...")
+	case <-d.Done():
+		log.Println("Process exited, shutting down...")
+	}
+
+	// Write final status to JSON file
+	if err := writeFinalStatus(d); err != nil {
+		log.Printf("Warning: failed to write final status: %v", err)
+	}
 }
 
 func getSocketPathFromPID(pid int) (string, error) {
@@ -558,5 +569,25 @@ func cmdShutdown(c *bgclient.Client) error {
 	}
 
 	fmt.Println("Shutdown request sent")
+	return nil
+}
+
+func writeFinalStatus(d *daemon.Daemon) error {
+	status := d.GetStatus()
+
+	// Write status to JSON file in runtime directory
+	statusPath := filepath.Join(d.RuntimeDir(), "status.json")
+	f, err := os.Create(statusPath)
+	if err != nil {
+		return fmt.Errorf("failed to create status file: %w", err)
+	}
+	defer f.Close()
+
+	encoder := json.NewEncoder(f)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(status); err != nil {
+		return fmt.Errorf("failed to encode status: %w", err)
+	}
+
 	return nil
 }
