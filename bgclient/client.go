@@ -318,13 +318,12 @@ func (c *Client) reapZombie() error {
 	return os.RemoveAll(c.runtimeDir)
 }
 
-// Attach attaches to output streams
+// Attach attaches to output streams for real-time streaming
 // streams can be StreamStdout, StreamStderr, or StreamBoth
-// For zombie processes, this is a no-op (output is read from the log file)
+// For zombie processes, use ReadOutput() instead
 func (c *Client) Attach(streams byte) error {
 	if c.isZombie {
-		// For zombies, attach is a no-op - we'll read from the log file
-		return nil
+		return ErrProcessTerminated
 	}
 	payload := []byte{streams}
 	if err := protocol.WriteMessage(c.conn, protocol.MsgAttach, payload); err != nil {
@@ -361,36 +360,12 @@ type OutputHandler func(stream byte, data []byte) error
 // ExitHandler is called when the process exits
 type ExitHandler func(exitCode int)
 
-// ReadMessages reads and handles messages from the daemon
+// ReadMessages reads and handles messages from the daemon for real-time streaming
 // This is typically run in a goroutine after calling Attach()
-// For zombie processes, reads from the output log file and calls exitHandler
+// For zombie processes, use ReadOutput() instead
 func (c *Client) ReadMessages(outputHandler OutputHandler, exitHandler ExitHandler) error {
 	if c.isZombie {
-		// Read output from log file for zombies
-		if c.outputLog != nil && outputHandler != nil {
-			buf := make([]byte, 4096)
-			for {
-				n, err := c.outputLog.Read(buf)
-				if n > 0 {
-					// All output in log file is stdout (we don't distinguish in log mode)
-					if err := outputHandler(protocol.StreamStdout, buf[:n]); err != nil {
-						return err
-					}
-				}
-				if err != nil {
-					if err == io.EOF {
-						break
-					}
-					return fmt.Errorf("failed to read output log: %w", err)
-				}
-			}
-		}
-
-		// Call exit handler with the cached exit code
-		if exitHandler != nil && c.status != nil && c.status.ExitCode != nil {
-			exitHandler(*c.status.ExitCode)
-		}
-		return nil
+		return ErrProcessTerminated
 	}
 
 	for {
@@ -431,4 +406,30 @@ func (c *Client) ReadMessages(outputHandler OutputHandler, exitHandler ExitHandl
 			// Ignore unknown message types
 		}
 	}
+}
+
+// ReadOutput reads the complete output log from a terminated process
+// This only works on zombie processes - use Attach/ReadMessages for live processes
+// Returns the complete output as a byte slice
+func (c *Client) ReadOutput() ([]byte, error) {
+	if !c.isZombie {
+		return nil, fmt.Errorf("ReadOutput only works on terminated processes, use Attach/ReadMessages for live processes")
+	}
+
+	if c.outputLog == nil {
+		return []byte{}, nil // No output log available
+	}
+
+	// Seek to beginning of file
+	if _, err := c.outputLog.Seek(0, 0); err != nil {
+		return nil, fmt.Errorf("failed to seek output log: %w", err)
+	}
+
+	// Read entire file
+	data, err := io.ReadAll(c.outputLog)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read output log: %w", err)
+	}
+
+	return data, nil
 }

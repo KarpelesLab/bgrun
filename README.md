@@ -280,14 +280,15 @@ import "github.com/KarpelesLab/bgrun/bgclient"
 - `New(pid int) (*Client, error)` - Create client connection to daemon by PID (handles both running and zombie processes)
 - `Connect(socketPath string) (*Client, error)` - Connect to daemon by socket path (deprecated, use New instead)
 - `GetStatus() (*StatusResponse, error)` - Get process status (works on zombies)
+- `ReadOutput() ([]byte, error)` - Read complete output log from terminated process (zombies only)
 - `WriteStdin(data []byte) error` - Write to stdin (fails on zombies with ErrProcessTerminated)
 - `CloseStdin() error` - Close stdin pipe (fails on zombies)
 - `SendSignal(sig syscall.Signal) error` - Send signal (fails on zombies)
 - `Wait(timeoutSecs uint32, waitType byte) (byte, error)` - Wait for process exit (returns immediately and reaps zombies)
-- `Attach(streams byte) error` - Attach to output streams (works on zombies, no-op)
+- `Attach(streams byte) error` - Attach to output streams for real-time streaming (fails on zombies)
 - `Detach() error` - Detach from output (fails on zombies)
 - `Shutdown() error` - Shutdown daemon (fails on zombies)
-- `ReadMessages(outputHandler, exitHandler) error` - Read output/events (works on zombies, reads from log file)
+- `ReadMessages(outputHandler, exitHandler) error` - Read real-time output/events (fails on zombies)
 
 #### Zombie Process Handling
 
@@ -295,13 +296,24 @@ When a bgrun daemon exits, it leaves a `status.json` and `output.log` file in th
 
 **Zombie operations that work:**
 - `GetStatus()` - Returns the cached status from status.json
-- `Attach()` / `ReadMessages()` - Reads the complete output from output.log (the log file inode is kept alive even after reaping)
+- `ReadOutput()` - Reads the complete output from output.log (the log file inode is kept alive even after reaping)
 - `Wait()` - Returns immediately with WaitStatusCompleted and cleans up the runtime directory (reaping the zombie)
 
 **Zombie operations that fail with `ErrProcessTerminated`:**
-- `WriteStdin()`, `CloseStdin()`, `SendSignal()`, `Resize()`, `Detach()`, `Shutdown()`
+- Real-time operations: `Attach()`, `ReadMessages()`, `Detach()`
+- Process control: `WriteStdin()`, `CloseStdin()`, `SendSignal()`, `Resize()`, `Shutdown()`
 
 This allows you to retrieve the final status and output of a terminated process, and `Wait()` acts as a reaper to clean up resources when you're done.
+
+**Example:**
+```go
+c, _ := bgclient.New(12345)   // Connect to zombie
+status, _ := c.GetStatus()     // Get final status
+output, _ := c.ReadOutput()    // Get complete output log
+c.Wait(0, WaitTypeExit)        // Reap zombie (cleanup)
+output2, _ := c.ReadOutput()   // Still works (inode alive)
+c.Close()                      // Release resources
+```
 
 ## Testing
 
