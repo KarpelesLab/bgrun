@@ -129,7 +129,8 @@ The control socket uses a binary-safe, length-prefixed protocol. See [PROTOCOL.m
 ```go
 import "github.com/KarpelesLab/bgrun/bgclient"
 
-c, err := bgclient.Connect("/run/user/1000/12345/control.sock")
+// Connect by daemon PID (recommended)
+c, err := bgclient.ConnectPID(12345)
 if err != nil {
     log.Fatal(err)
 }
@@ -146,7 +147,7 @@ fmt.Printf("PID: %d, Running: %v\n", status.PID, status.Running)
 ### Example: Streaming Output
 
 ```go
-c, err := bgclient.Connect("/run/user/1000/12345/control.sock")
+c, err := bgclient.ConnectPID(12345)
 if err != nil {
     log.Fatal(err)
 }
@@ -176,7 +177,7 @@ err = c.ReadMessages(
 ### Example: Writing to stdin
 
 ```go
-c, err := bgclient.Connect("/run/user/1000/12345/control.sock")
+c, err := bgclient.ConnectPID(12345)
 if err != nil {
     log.Fatal(err)
 }
@@ -276,7 +277,8 @@ import "github.com/KarpelesLab/bgrun/bgclient"
 
 ### API Methods
 
-- `Connect(socketPath string) (*Client, error)` - Connect to daemon
+- `ConnectPID(pid int) (*Client, error)` - Connect to daemon by PID (recommended)
+- `Connect(socketPath string) (*Client, error)` - Connect to daemon by socket path
 - `GetStatus() (*StatusResponse, error)` - Get process status
 - `WriteStdin(data []byte) error` - Write to stdin
 - `CloseStdin() error` - Close stdin pipe

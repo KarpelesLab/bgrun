@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
+	"path/filepath"
+	"strconv"
 	"syscall"
 
 	"github.com/KarpelesLab/bgrun/protocol"
@@ -23,6 +26,35 @@ func Connect(socketPath string) (*Client, error) {
 	}
 
 	return &Client{conn: conn}, nil
+}
+
+// ConnectPID connects to a bgrun daemon by its PID
+func ConnectPID(pid int) (*Client, error) {
+	socketPath, err := getSocketPathFromPID(pid)
+	if err != nil {
+		return nil, err
+	}
+	return Connect(socketPath)
+}
+
+// getSocketPathFromPID finds the control socket path for a given daemon PID
+func getSocketPathFromPID(pid int) (string, error) {
+	// Try XDG_RUNTIME_DIR first
+	if xdgDir := os.Getenv("XDG_RUNTIME_DIR"); xdgDir != "" {
+		socketPath := filepath.Join(xdgDir, "bgrun", strconv.Itoa(pid), "control.sock")
+		if _, err := os.Stat(socketPath); err == nil {
+			return socketPath, nil
+		}
+	}
+
+	// Fall back to /tmp/.bgrun-<uid>/<pid>
+	uid := os.Getuid()
+	socketPath := filepath.Join("/tmp", ".bgrun-"+strconv.Itoa(uid), strconv.Itoa(pid), "control.sock")
+	if _, err := os.Stat(socketPath); err == nil {
+		return socketPath, nil
+	}
+
+	return "", fmt.Errorf("control socket not found for PID %d (tried XDG_RUNTIME_DIR/bgrun and /tmp/.bgrun-%d)", pid, uid)
 }
 
 // Close closes the connection

@@ -124,16 +124,10 @@ func runControlMode() {
 
 	command := args[0]
 
-	// Get socket path from PID
-	socketPath, err := getSocketPathFromPID(*pidFlag)
+	// Connect to daemon by PID
+	c, err := bgclient.ConnectPID(*pidFlag)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to find socket for PID %d: %v\n", *pidFlag, err)
-		os.Exit(1)
-	}
-
-	c, err := bgclient.Connect(socketPath)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to connect: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Failed to connect to PID %d: %v\n", *pidFlag, err)
 		os.Exit(1)
 	}
 	defer c.Close()
@@ -245,25 +239,6 @@ func runDaemonMode() {
 	if err := writeFinalStatus(d); err != nil {
 		log.Printf("Warning: failed to write final status: %v", err)
 	}
-}
-
-func getSocketPathFromPID(pid int) (string, error) {
-	// Try XDG_RUNTIME_DIR first
-	if xdgDir := os.Getenv("XDG_RUNTIME_DIR"); xdgDir != "" {
-		socketPath := filepath.Join(xdgDir, "bgrun", strconv.Itoa(pid), "control.sock")
-		if _, err := os.Stat(socketPath); err == nil {
-			return socketPath, nil
-		}
-	}
-
-	// Fall back to /tmp/.bgrun-<uid>/<pid>
-	uid := os.Getuid()
-	socketPath := filepath.Join("/tmp", ".bgrun-"+strconv.Itoa(uid), strconv.Itoa(pid), "control.sock")
-	if _, err := os.Stat(socketPath); err == nil {
-		return socketPath, nil
-	}
-
-	return "", fmt.Errorf("control socket not found (tried XDG_RUNTIME_DIR/bgrun and /tmp/.bgrun-%d)", uid)
 }
 
 func parseConfig(command []string) (*daemon.Config, error) {
