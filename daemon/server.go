@@ -143,6 +143,9 @@ func (d *Daemon) handleMessage(conn net.Conn, msg *protocol.Message) error {
 	case protocol.MsgWait:
 		return d.handleWait(conn, msg.Payload)
 
+	case protocol.MsgGetScreen:
+		return d.handleGetScreen(conn)
+
 	case protocol.MsgShutdown:
 		return d.handleShutdown(conn)
 
@@ -292,6 +295,46 @@ func (d *Daemon) handleWait(conn net.Conn, payload []byte) error {
 
 	// Send response
 	return protocol.WriteWaitResponse(conn, status)
+}
+
+// handleGetScreen returns the current terminal screen state
+func (d *Daemon) handleGetScreen(conn net.Conn) error {
+	if !d.config.UseVTY {
+		return fmt.Errorf("VTY is not enabled")
+	}
+
+	if d.vtyTermemu == nil {
+		return fmt.Errorf("terminal emulator is not available")
+	}
+
+	// Get the screen buffer
+	screen := d.vtyTermemu.GetScreen()
+	cursorRow, cursorCol := d.vtyTermemu.GetCursor()
+
+	// Convert screen to string lines
+	lines := make([]string, len(screen))
+	for i, row := range screen {
+		line := make([]rune, len(row))
+		for j, cell := range row {
+			if cell.Char == 0 {
+				line[j] = ' '
+			} else {
+				line[j] = cell.Char
+			}
+		}
+		lines[i] = string(line)
+	}
+
+	// Create response
+	response := &protocol.ScreenResponse{
+		Rows:      len(screen),
+		Cols:      len(screen[0]),
+		CursorRow: cursorRow,
+		CursorCol: cursorCol,
+		Lines:     lines,
+	}
+
+	return protocol.WriteScreenResponse(conn, response)
 }
 
 // handleShutdown shuts down the daemon

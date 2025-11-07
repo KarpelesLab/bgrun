@@ -20,6 +20,7 @@ const (
 	MsgDetach     MessageType = 0x06
 	MsgCloseStdin MessageType = 0x07
 	MsgWait       MessageType = 0x08
+	MsgGetScreen  MessageType = 0x09
 	MsgShutdown   MessageType = 0x10
 )
 
@@ -30,6 +31,7 @@ const (
 	MsgSignalResponse MessageType = 0x82
 	MsgResizeResponse MessageType = 0x83
 	MsgWaitResponse   MessageType = 0x88
+	MsgScreenResponse MessageType = 0x89
 	MsgError          MessageType = 0x8F
 	MsgProcessExit    MessageType = 0x90
 )
@@ -69,6 +71,15 @@ type StatusResponse struct {
 	EndedAt   *string  `json:"ended_at,omitempty"`
 	Command   []string `json:"command"`
 	HasVTY    bool     `json:"has_vty"`
+}
+
+// ScreenResponse contains terminal screen state
+type ScreenResponse struct {
+	Rows      int      `json:"rows"`
+	Cols      int      `json:"cols"`
+	CursorRow int      `json:"cursor_row"`
+	CursorCol int      `json:"cursor_col"`
+	Lines     []string `json:"lines"` // Each line as a string
 }
 
 // ReadMessage reads a message from the reader
@@ -204,4 +215,22 @@ func ParseWaitResponse(payload []byte) (byte, error) {
 		return 0, fmt.Errorf("invalid wait response payload length")
 	}
 	return payload[0], nil
+}
+
+// WriteScreenResponse writes a screen response message
+func WriteScreenResponse(w io.Writer, screen *ScreenResponse) error {
+	data, err := json.Marshal(screen)
+	if err != nil {
+		return fmt.Errorf("failed to marshal screen: %w", err)
+	}
+	return WriteMessage(w, MsgScreenResponse, data)
+}
+
+// ParseScreenResponse parses a screen response payload
+func ParseScreenResponse(payload []byte) (*ScreenResponse, error) {
+	var screen ScreenResponse
+	if err := json.Unmarshal(payload, &screen); err != nil {
+		return nil, fmt.Errorf("failed to parse screen response: %w", err)
+	}
+	return &screen, nil
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/KarpelesLab/bgrun/termemu"
 	"github.com/creack/pty"
 )
 
@@ -26,12 +27,17 @@ func (d *Daemon) startProcessVTY() error {
 	d.vtyPty = ptmx
 
 	// Set initial PTY size (default to 24x80 if not specified)
+	rows := uint16(24)
+	cols := uint16(80)
 	if err := pty.Setsize(ptmx, &pty.Winsize{
-		Rows: 24,
-		Cols: 80,
+		Rows: rows,
+		Cols: cols,
 	}); err != nil {
 		log.Printf("Warning: failed to set initial PTY size: %v", err)
 	}
+
+	// Initialize terminal emulator
+	d.vtyTermemu = termemu.NewTerminal(int(rows), int(cols))
 
 	d.mu.Lock()
 	d.pid = d.cmd.Process.Pid
@@ -56,6 +62,11 @@ func (d *Daemon) handleVTYOutput() {
 		n, err := d.vtyPty.Read(buf)
 		if n > 0 {
 			data := buf[:n]
+
+			// Feed to terminal emulator
+			if d.vtyTermemu != nil {
+				d.vtyTermemu.Write(data)
+			}
 
 			// Write to log file
 			if d.logFile != nil {
@@ -99,6 +110,11 @@ func (d *Daemon) resizeVTY(rows, cols uint16) error {
 		Cols: cols,
 	}); err != nil {
 		return fmt.Errorf("failed to resize PTY: %w", err)
+	}
+
+	// Resize terminal emulator
+	if d.vtyTermemu != nil {
+		d.vtyTermemu.Resize(int(rows), int(cols))
 	}
 
 	// Send SIGWINCH to the process to notify it of the resize

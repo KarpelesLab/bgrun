@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/KarpelesLab/bgrun/protocol"
+	"github.com/KarpelesLab/bgrun/termemu"
 )
 
 // StdinMode defines how stdin should be handled
@@ -65,7 +66,8 @@ type Daemon struct {
 	stdoutPipe io.ReadCloser
 	stderrPipe io.ReadCloser
 
-	vtyPty *os.File // PTY for VTY mode
+	vtyPty     *os.File          // PTY for VTY mode
+	vtyTermemu *termemu.Terminal // Terminal emulator for VTY mode
 
 	logFile *os.File
 

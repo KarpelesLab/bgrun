@@ -433,3 +433,36 @@ func (c *Client) ReadOutput() ([]byte, error) {
 
 	return data, nil
 }
+
+// GetScreen retrieves the current terminal screen state (VTY mode only)
+// This returns the current screen buffer, cursor position, and dimensions
+func (c *Client) GetScreen() (*protocol.ScreenResponse, error) {
+	if c.isZombie {
+		return nil, ErrProcessTerminated
+	}
+
+	if err := protocol.WriteMessage(c.conn, protocol.MsgGetScreen, nil); err != nil {
+		return nil, fmt.Errorf("failed to send get screen request: %w", err)
+	}
+
+	// Wait for response
+	msg, err := protocol.ReadMessage(c.conn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if msg.Type == protocol.MsgError {
+		return nil, fmt.Errorf("server error: %s", string(msg.Payload))
+	}
+
+	if msg.Type != protocol.MsgScreenResponse {
+		return nil, fmt.Errorf("unexpected response type: 0x%02X", msg.Type)
+	}
+
+	screen, err := protocol.ParseScreenResponse(msg.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse screen response: %w", err)
+	}
+
+	return screen, nil
+}
