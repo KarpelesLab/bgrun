@@ -250,7 +250,7 @@ func runDaemonMode() {
 func getSocketPathFromPID(pid int) (string, error) {
 	// Try XDG_RUNTIME_DIR first
 	if xdgDir := os.Getenv("XDG_RUNTIME_DIR"); xdgDir != "" {
-		socketPath := fmt.Sprintf("%s/%d/control.sock", xdgDir, pid)
+		socketPath := fmt.Sprintf("%s/bgrun/%d/control.sock", xdgDir, pid)
 		if _, err := os.Stat(socketPath); err == nil {
 			return socketPath, nil
 		}
@@ -263,7 +263,7 @@ func getSocketPathFromPID(pid int) (string, error) {
 		return socketPath, nil
 	}
 
-	return "", fmt.Errorf("control socket not found (tried XDG_RUNTIME_DIR and /tmp/.bgrun-%d)", uid)
+	return "", fmt.Errorf("control socket not found (tried XDG_RUNTIME_DIR/bgrun and /tmp/.bgrun-%d)", uid)
 }
 
 func parseConfig(command []string) (*daemon.Config, error) {
@@ -341,12 +341,13 @@ func showHelp() {
 	fmt.Println("  -help           show this help message")
 	fmt.Println()
 	fmt.Println("The daemon creates a runtime directory at:")
-	fmt.Println("  $XDG_RUNTIME_DIR/<pid>  (if XDG_RUNTIME_DIR is set)")
-	fmt.Println("  /tmp/.bgrun-<uid>/<pid> (otherwise)")
+	fmt.Println("  $XDG_RUNTIME_DIR/bgrun/<pid>  (if XDG_RUNTIME_DIR is set)")
+	fmt.Println("  /tmp/.bgrun-<uid>/<pid>       (otherwise)")
 	fmt.Println()
 	fmt.Println("In the runtime directory:")
 	fmt.Println("  control.sock - Unix socket for control API")
 	fmt.Println("  output.log   - Process output (when using 'log' mode)")
+	fmt.Println("  status.json  - Final process status (written on exit)")
 	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  # Daemon mode:")

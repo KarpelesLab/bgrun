@@ -44,8 +44,8 @@ When starting in foreground mode, bgrun prints the runtime directory and control
 
 ```
 Process started successfully
-Runtime directory: /run/user/1000/12345
-Control socket: /run/user/1000/12345/control.sock
+Runtime directory: /run/user/1000/bgrun/12345
+Control socket: /run/user/1000/bgrun/12345/control.sock
 ```
 
 When using `-background`, bgrun outputs only the daemon PID, which you can use with `-ctl` commands.
@@ -249,9 +249,10 @@ echo "data" | nc -U /run/user/1000/$PID/control.sock
 ## Runtime Directory Structure
 
 ```
-$XDG_RUNTIME_DIR/<pid>/
+$XDG_RUNTIME_DIR/bgrun/<pid>/
 ├── control.sock    # Unix socket for control API
-└── output.log      # Process output (when using 'log' mode)
+├── output.log      # Process output (when using 'log' mode)
+└── status.json     # Final process status (written on exit)
 ```
 
 Or if `$XDG_RUNTIME_DIR` is not set:
@@ -259,7 +260,8 @@ Or if `$XDG_RUNTIME_DIR` is not set:
 ```
 /tmp/.bgrun-<uid>/<pid>/
 ├── control.sock
-└── output.log
+├── output.log
+└── status.json
 ```
 
 ## Client Library

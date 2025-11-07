@@ -114,7 +114,7 @@ func New(config *Config) (*Daemon, error) {
 func getRuntimeDir() (string, error) {
 	// Try XDG_RUNTIME_DIR first
 	if xdgRuntime := os.Getenv("XDG_RUNTIME_DIR"); xdgRuntime != "" {
-		dir := filepath.Join(xdgRuntime, fmt.Sprintf("%d", os.Getpid()))
+		dir := filepath.Join(xdgRuntime, "bgrun", fmt.Sprintf("%d", os.Getpid()))
 		return dir, nil
 	}
 
