@@ -129,8 +129,8 @@ The control socket uses a binary-safe, length-prefixed protocol. See [PROTOCOL.m
 ```go
 import "github.com/KarpelesLab/bgrun/bgclient"
 
-// Connect by daemon PID (recommended)
-c, err := bgclient.ConnectPID(12345)
+// Connect to daemon by PID
+c, err := bgclient.New(12345)
 if err != nil {
     log.Fatal(err)
 }
@@ -147,7 +147,7 @@ fmt.Printf("PID: %d, Running: %v\n", status.PID, status.Running)
 ### Example: Streaming Output
 
 ```go
-c, err := bgclient.ConnectPID(12345)
+c, err := bgclient.New(12345)
 if err != nil {
     log.Fatal(err)
 }
@@ -177,7 +177,7 @@ err = c.ReadMessages(
 ### Example: Writing to stdin
 
 ```go
-c, err := bgclient.ConnectPID(12345)
+c, err := bgclient.New(12345)
 if err != nil {
     log.Fatal(err)
 }
@@ -277,17 +277,21 @@ import "github.com/KarpelesLab/bgrun/bgclient"
 
 ### API Methods
 
-- `ConnectPID(pid int) (*Client, error)` - Connect to daemon by PID (recommended)
-- `Connect(socketPath string) (*Client, error)` - Connect to daemon by socket path
-- `GetStatus() (*StatusResponse, error)` - Get process status
-- `WriteStdin(data []byte) error` - Write to stdin
-- `CloseStdin() error` - Close stdin pipe
-- `SendSignal(sig syscall.Signal) error` - Send signal
-- `Wait(timeoutSecs uint32, waitType byte) (byte, error)` - Wait for process exit or foreground
-- `Attach(streams byte) error` - Attach to output streams
-- `Detach() error` - Detach from output
-- `Shutdown() error` - Shutdown daemon
-- `ReadMessages(outputHandler, exitHandler) error` - Read output/events
+- `New(pid int) (*Client, error)` - Create client connection to daemon by PID (handles both running and zombie processes)
+- `Connect(socketPath string) (*Client, error)` - Connect to daemon by socket path (deprecated, use New instead)
+- `GetStatus() (*StatusResponse, error)` - Get process status (works on zombies)
+- `WriteStdin(data []byte) error` - Write to stdin (fails on zombies with ErrProcessTerminated)
+- `CloseStdin() error` - Close stdin pipe (fails on zombies)
+- `SendSignal(sig syscall.Signal) error` - Send signal (fails on zombies)
+- `Wait(timeoutSecs uint32, waitType byte) (byte, error)` - Wait for process exit (returns immediately and reaps zombies)
+- `Attach(streams byte) error` - Attach to output streams (fails on zombies)
+- `Detach() error` - Detach from output (fails on zombies)
+- `Shutdown() error` - Shutdown daemon (fails on zombies)
+- `ReadMessages(outputHandler, exitHandler) error` - Read output/events (fails on zombies)
+
+#### Zombie Process Handling
+
+When a bgrun daemon exits, it leaves a `status.json` file in the runtime directory. The client can still connect to these "zombie" processes using `New(pid)`. Most operations will fail with `ErrProcessTerminated`, but `GetStatus()` will return the cached status, and `Wait()` will return immediately and clean up the runtime directory (reaping the zombie).
 
 ## Testing
 

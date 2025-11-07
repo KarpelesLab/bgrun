@@ -401,6 +401,12 @@ func (d *Daemon) waitForProcess() {
 	// Notify all clients of process exit
 	d.broadcastProcessExit(exitCode)
 
+	// Remove the socket file to indicate daemon is shutting down
+	// Leave status.json for zombie process handling
+	if d.socketPath != "" {
+		os.Remove(d.socketPath)
+	}
+
 	// Signal that the process has exited
 	close(d.doneCh)
 }

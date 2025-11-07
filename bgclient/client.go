@@ -2,6 +2,8 @@ package bgclient
 
 import (
 	"encoding/binary"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -13,12 +15,20 @@ import (
 	"github.com/KarpelesLab/bgrun/protocol"
 )
 
+// ErrProcessTerminated is returned when attempting operations on a terminated process
+var ErrProcessTerminated = errors.New("process has terminated")
+
 // Client represents a connection to a bgrun daemon
 type Client struct {
-	conn net.Conn
+	conn       net.Conn
+	pid        int
+	runtimeDir string
+	isZombie   bool
+	status     *protocol.StatusResponse // cached status for zombie processes
 }
 
 // Connect connects to a bgrun daemon at the specified socket path
+// Deprecated: Use New(pid) instead
 func Connect(socketPath string) (*Client, error) {
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
@@ -28,42 +38,92 @@ func Connect(socketPath string) (*Client, error) {
 	return &Client{conn: conn}, nil
 }
 
-// ConnectPID connects to a bgrun daemon by its PID
-func ConnectPID(pid int) (*Client, error) {
-	socketPath, err := getSocketPathFromPID(pid)
+// New creates a client connection to a bgrun daemon by its PID
+// If the daemon has terminated but left a status.json file (zombie state),
+// most operations will return ErrProcessTerminated except Wait which will
+// return immediately and clean up the zombie.
+func New(pid int) (*Client, error) {
+	runtimeDir, err := getRuntimeDirForPID(pid)
 	if err != nil {
 		return nil, err
 	}
-	return Connect(socketPath)
+
+	socketPath := filepath.Join(runtimeDir, "control.sock")
+	statusPath := filepath.Join(runtimeDir, "status.json")
+
+	// Check if socket exists (daemon is running)
+	if _, err := os.Stat(socketPath); err == nil {
+		conn, err := net.Dial("unix", socketPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to connect to socket: %w", err)
+		}
+		return &Client{
+			conn:       conn,
+			pid:        pid,
+			runtimeDir: runtimeDir,
+			isZombie:   false,
+		}, nil
+	}
+
+	// Socket doesn't exist, check for zombie (status.json exists)
+	if _, err := os.Stat(statusPath); err == nil {
+		// Read zombie status
+		data, err := os.ReadFile(statusPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read zombie status: %w", err)
+		}
+
+		var status protocol.StatusResponse
+		if err := json.Unmarshal(data, &status); err != nil {
+			return nil, fmt.Errorf("failed to parse zombie status: %w", err)
+		}
+
+		return &Client{
+			pid:        pid,
+			runtimeDir: runtimeDir,
+			isZombie:   true,
+			status:     &status,
+		}, nil
+	}
+
+	return nil, fmt.Errorf("process %d not found (no socket or status.json in %s)", pid, runtimeDir)
 }
 
-// getSocketPathFromPID finds the control socket path for a given daemon PID
-func getSocketPathFromPID(pid int) (string, error) {
+// getRuntimeDirForPID finds the runtime directory for a given daemon PID
+func getRuntimeDirForPID(pid int) (string, error) {
 	// Try XDG_RUNTIME_DIR first
 	if xdgDir := os.Getenv("XDG_RUNTIME_DIR"); xdgDir != "" {
-		socketPath := filepath.Join(xdgDir, "bgrun", strconv.Itoa(pid), "control.sock")
-		if _, err := os.Stat(socketPath); err == nil {
-			return socketPath, nil
+		dir := filepath.Join(xdgDir, "bgrun", strconv.Itoa(pid))
+		if _, err := os.Stat(dir); err == nil {
+			return dir, nil
 		}
 	}
 
 	// Fall back to /tmp/.bgrun-<uid>/<pid>
 	uid := os.Getuid()
-	socketPath := filepath.Join("/tmp", ".bgrun-"+strconv.Itoa(uid), strconv.Itoa(pid), "control.sock")
-	if _, err := os.Stat(socketPath); err == nil {
-		return socketPath, nil
+	dir := filepath.Join("/tmp", ".bgrun-"+strconv.Itoa(uid), strconv.Itoa(pid))
+	if _, err := os.Stat(dir); err == nil {
+		return dir, nil
 	}
 
-	return "", fmt.Errorf("control socket not found for PID %d (tried XDG_RUNTIME_DIR/bgrun and /tmp/.bgrun-%d)", pid, uid)
+	return "", fmt.Errorf("runtime directory not found for PID %d (tried XDG_RUNTIME_DIR/bgrun and /tmp/.bgrun-%d)", pid, uid)
 }
 
 // Close closes the connection
 func (c *Client) Close() error {
-	return c.conn.Close()
+	if c.conn != nil {
+		return c.conn.Close()
+	}
+	return nil
 }
 
 // GetStatus retrieves the current process status
 func (c *Client) GetStatus() (*protocol.StatusResponse, error) {
+	// Return cached status for zombie processes
+	if c.isZombie {
+		return c.status, nil
+	}
+
 	if err := protocol.WriteMessage(c.conn, protocol.MsgStatus, nil); err != nil {
 		return nil, fmt.Errorf("failed to send status request: %w", err)
 	}
@@ -99,6 +159,9 @@ func (c *Client) GetStatus() (*protocol.StatusResponse, error) {
 
 // WriteStdin writes data to the process stdin
 func (c *Client) WriteStdin(data []byte) error {
+	if c.isZombie {
+		return ErrProcessTerminated
+	}
 	if err := protocol.WriteMessage(c.conn, protocol.MsgStdin, data); err != nil {
 		return fmt.Errorf("failed to write stdin: %w", err)
 	}
@@ -107,6 +170,9 @@ func (c *Client) WriteStdin(data []byte) error {
 
 // CloseStdin closes the process stdin pipe
 func (c *Client) CloseStdin() error {
+	if c.isZombie {
+		return ErrProcessTerminated
+	}
 	if err := protocol.WriteMessage(c.conn, protocol.MsgCloseStdin, nil); err != nil {
 		return fmt.Errorf("failed to close stdin: %w", err)
 	}
@@ -115,6 +181,9 @@ func (c *Client) CloseStdin() error {
 
 // SendSignal sends a signal to the process
 func (c *Client) SendSignal(sig syscall.Signal) error {
+	if c.isZombie {
+		return ErrProcessTerminated
+	}
 	payload := []byte{byte(sig)}
 	if err := protocol.WriteMessage(c.conn, protocol.MsgSignal, payload); err != nil {
 		return fmt.Errorf("failed to send signal: %w", err)
@@ -139,6 +208,9 @@ func (c *Client) SendSignal(sig syscall.Signal) error {
 
 // Resize resizes the VTY terminal
 func (c *Client) Resize(rows, cols uint16) error {
+	if c.isZombie {
+		return ErrProcessTerminated
+	}
 	payload := make([]byte, 4)
 	payload[0] = byte(rows >> 8)
 	payload[1] = byte(rows)
@@ -169,7 +241,21 @@ func (c *Client) Resize(rows, cols uint16) error {
 // Wait waits for a condition to be met with timeout
 // waitType: protocol.WaitTypeExit (wait for process exit) or protocol.WaitTypeForeground (wait for foreground control)
 // Returns: protocol.WaitStatusCompleted, protocol.WaitStatusTimeout, or protocol.WaitStatusNotApplicable
+// For zombie processes, returns immediately with WaitStatusCompleted and cleans up the runtime directory
 func (c *Client) Wait(timeoutSecs uint32, waitType byte) (byte, error) {
+	// For zombie processes, return immediately and reap
+	if c.isZombie {
+		// Only reap on exit wait
+		if waitType == protocol.WaitTypeExit {
+			if err := c.reapZombie(); err != nil {
+				return 0, fmt.Errorf("failed to reap zombie: %w", err)
+			}
+			return protocol.WaitStatusCompleted, nil
+		}
+		// For other wait types on zombies, not applicable
+		return protocol.WaitStatusNotApplicable, nil
+	}
+
 	payload := make([]byte, 5)
 	binary.BigEndian.PutUint32(payload[0:4], timeoutSecs)
 	payload[4] = waitType
@@ -206,9 +292,20 @@ func (c *Client) Wait(timeoutSecs uint32, waitType byte) (byte, error) {
 	}
 }
 
+// reapZombie cleans up the runtime directory for a terminated process
+func (c *Client) reapZombie() error {
+	if !c.isZombie {
+		return fmt.Errorf("cannot reap non-zombie process")
+	}
+	return os.RemoveAll(c.runtimeDir)
+}
+
 // Attach attaches to output streams
 // streams can be StreamStdout, StreamStderr, or StreamBoth
 func (c *Client) Attach(streams byte) error {
+	if c.isZombie {
+		return ErrProcessTerminated
+	}
 	payload := []byte{streams}
 	if err := protocol.WriteMessage(c.conn, protocol.MsgAttach, payload); err != nil {
 		return fmt.Errorf("failed to attach: %w", err)
@@ -218,6 +315,9 @@ func (c *Client) Attach(streams byte) error {
 
 // Detach detaches from output streams
 func (c *Client) Detach() error {
+	if c.isZombie {
+		return ErrProcessTerminated
+	}
 	if err := protocol.WriteMessage(c.conn, protocol.MsgDetach, nil); err != nil {
 		return fmt.Errorf("failed to detach: %w", err)
 	}
@@ -226,6 +326,9 @@ func (c *Client) Detach() error {
 
 // Shutdown requests the daemon to shut down
 func (c *Client) Shutdown() error {
+	if c.isZombie {
+		return ErrProcessTerminated
+	}
 	if err := protocol.WriteMessage(c.conn, protocol.MsgShutdown, nil); err != nil {
 		return fmt.Errorf("failed to send shutdown: %w", err)
 	}
@@ -241,6 +344,9 @@ type ExitHandler func(exitCode int)
 // ReadMessages reads and handles messages from the daemon
 // This is typically run in a goroutine after calling Attach()
 func (c *Client) ReadMessages(outputHandler OutputHandler, exitHandler ExitHandler) error {
+	if c.isZombie {
+		return ErrProcessTerminated
+	}
 	for {
 		msg, err := protocol.ReadMessage(c.conn)
 		if err != nil {

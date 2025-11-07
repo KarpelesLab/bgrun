@@ -125,7 +125,7 @@ func runControlMode() {
 	command := args[0]
 
 	// Connect to daemon by PID
-	c, err := bgclient.ConnectPID(*pidFlag)
+	c, err := bgclient.New(*pidFlag)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to connect to PID %d: %v\n", *pidFlag, err)
 		os.Exit(1)
