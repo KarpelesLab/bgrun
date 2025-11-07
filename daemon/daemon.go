@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -114,13 +115,13 @@ func New(config *Config) (*Daemon, error) {
 func getRuntimeDir() (string, error) {
 	// Try XDG_RUNTIME_DIR first
 	if xdgRuntime := os.Getenv("XDG_RUNTIME_DIR"); xdgRuntime != "" {
-		dir := filepath.Join(xdgRuntime, "bgrun", fmt.Sprintf("%d", os.Getpid()))
+		dir := filepath.Join(xdgRuntime, "bgrun", strconv.Itoa(os.Getpid()))
 		return dir, nil
 	}
 
 	// Fall back to /tmp/.bgrun-<uid>/<pid>
 	uid := os.Getuid()
-	dir := filepath.Join("/tmp", fmt.Sprintf(".bgrun-%d", uid), fmt.Sprintf("%d", os.Getpid()))
+	dir := filepath.Join("/tmp", ".bgrun-"+strconv.Itoa(uid), strconv.Itoa(os.Getpid()))
 	return dir, nil
 }
 

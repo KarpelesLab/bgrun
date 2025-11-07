@@ -250,7 +250,7 @@ func runDaemonMode() {
 func getSocketPathFromPID(pid int) (string, error) {
 	// Try XDG_RUNTIME_DIR first
 	if xdgDir := os.Getenv("XDG_RUNTIME_DIR"); xdgDir != "" {
-		socketPath := fmt.Sprintf("%s/bgrun/%d/control.sock", xdgDir, pid)
+		socketPath := filepath.Join(xdgDir, "bgrun", strconv.Itoa(pid), "control.sock")
 		if _, err := os.Stat(socketPath); err == nil {
 			return socketPath, nil
 		}
@@ -258,7 +258,7 @@ func getSocketPathFromPID(pid int) (string, error) {
 
 	// Fall back to /tmp/.bgrun-<uid>/<pid>
 	uid := os.Getuid()
-	socketPath := fmt.Sprintf("/tmp/.bgrun-%d/%d/control.sock", uid, pid)
+	socketPath := filepath.Join("/tmp", ".bgrun-"+strconv.Itoa(uid), strconv.Itoa(pid), "control.sock")
 	if _, err := os.Stat(socketPath); err == nil {
 		return socketPath, nil
 	}
