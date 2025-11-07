@@ -80,9 +80,9 @@ func TestClientServerIntegration(t *testing.T) {
 func TestClientAttachOutput(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Start daemon that produces output
+	// Start daemon that produces output - add initial delay to allow attach before output
 	config := &daemon.Config{
-		Command:    []string{"sh", "-c", "for i in 1 2 3; do echo line $i; sleep 0.1; done"},
+		Command:    []string{"sh", "-c", "sleep 0.2; for i in 1 2 3; do echo line $i; sleep 0.1; done"},
 		StdinMode:  daemon.StdinNull,
 		StdoutMode: daemon.IOModeLog,
 		StderrMode: daemon.IOModeLog,
@@ -253,9 +253,9 @@ func TestClientStdinWrite(t *testing.T) {
 func TestMultipleClients(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	// Start daemon
+	// Start daemon - add initial delay to allow clients to attach before output
 	config := &daemon.Config{
-		Command:    []string{"sh", "-c", "for i in 1 2 3; do echo output $i; sleep 0.2; done"},
+		Command:    []string{"sh", "-c", "sleep 0.2; for i in 1 2 3; do echo output $i; sleep 0.2; done"},
 		StdinMode:  daemon.StdinNull,
 		StdoutMode: daemon.IOModeLog,
 		StderrMode: daemon.IOModeLog,

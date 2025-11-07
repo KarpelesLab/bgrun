@@ -136,23 +136,35 @@ func TestGetStatus(t *testing.T) {
 
 func TestGetStatusAfterExit(t *testing.T) {
 	config := &daemon.Config{
-		Command:    []string{"sh", "-c", "exit 42"},
+		Command:    []string{"sh", "-c", "sleep 0.2; exit 42"},
 		StdinMode:  daemon.StdinNull,
 		StdoutMode: daemon.IOModeLog,
 		StderrMode: daemon.IOModeLog,
 	}
-	_, socketPath := setupDaemon(t, config)
+	d, socketPath := setupDaemon(t, config)
 
-	// Wait for process to exit
-	time.Sleep(500 * time.Millisecond)
-
+	// Connect while process is still running
 	c, err := Connect(socketPath)
 	if err != nil {
 		t.Fatalf("Connect failed: %v", err)
 	}
 	defer c.Close()
 
+	// Verify process is running
 	status, err := c.GetStatus()
+	if err != nil {
+		t.Fatalf("GetStatus failed: %v", err)
+	}
+	if !status.Running {
+		t.Fatal("Process should be running")
+	}
+
+	// Wait for process to exit
+	<-d.Done()
+	time.Sleep(100 * time.Millisecond)
+
+	// Get status after exit (connection still open, just process exited)
+	status, err = c.GetStatus()
 	if err != nil {
 		t.Fatalf("GetStatus failed: %v", err)
 	}
