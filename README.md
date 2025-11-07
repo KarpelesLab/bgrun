@@ -284,14 +284,24 @@ import "github.com/KarpelesLab/bgrun/bgclient"
 - `CloseStdin() error` - Close stdin pipe (fails on zombies)
 - `SendSignal(sig syscall.Signal) error` - Send signal (fails on zombies)
 - `Wait(timeoutSecs uint32, waitType byte) (byte, error)` - Wait for process exit (returns immediately and reaps zombies)
-- `Attach(streams byte) error` - Attach to output streams (fails on zombies)
+- `Attach(streams byte) error` - Attach to output streams (works on zombies, no-op)
 - `Detach() error` - Detach from output (fails on zombies)
 - `Shutdown() error` - Shutdown daemon (fails on zombies)
-- `ReadMessages(outputHandler, exitHandler) error` - Read output/events (fails on zombies)
+- `ReadMessages(outputHandler, exitHandler) error` - Read output/events (works on zombies, reads from log file)
 
 #### Zombie Process Handling
 
-When a bgrun daemon exits, it leaves a `status.json` file in the runtime directory. The client can still connect to these "zombie" processes using `New(pid)`. Most operations will fail with `ErrProcessTerminated`, but `GetStatus()` will return the cached status, and `Wait()` will return immediately and clean up the runtime directory (reaping the zombie).
+When a bgrun daemon exits, it leaves a `status.json` and `output.log` file in the runtime directory. The client can still connect to these "zombie" processes using `New(pid)`.
+
+**Zombie operations that work:**
+- `GetStatus()` - Returns the cached status from status.json
+- `Attach()` / `ReadMessages()` - Reads the complete output from output.log (the log file inode is kept alive even after reaping)
+- `Wait()` - Returns immediately with WaitStatusCompleted and cleans up the runtime directory (reaping the zombie)
+
+**Zombie operations that fail with `ErrProcessTerminated`:**
+- `WriteStdin()`, `CloseStdin()`, `SendSignal()`, `Resize()`, `Detach()`, `Shutdown()`
+
+This allows you to retrieve the final status and output of a terminated process, and `Wait()` acts as a reaper to clean up resources when you're done.
 
 ## Testing
 

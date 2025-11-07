@@ -25,6 +25,7 @@ type Client struct {
 	runtimeDir string
 	isZombie   bool
 	status     *protocol.StatusResponse // cached status for zombie processes
+	outputLog  *os.File                 // opened output.log for zombie processes (keeps inode alive)
 }
 
 // Connect connects to a bgrun daemon at the specified socket path
@@ -78,11 +79,22 @@ func New(pid int) (*Client, error) {
 			return nil, fmt.Errorf("failed to parse zombie status: %w", err)
 		}
 
+		// Open output.log for reading (keeps inode alive even after reaping)
+		outputLogPath := filepath.Join(runtimeDir, "output.log")
+		var outputLog *os.File
+		if _, err := os.Stat(outputLogPath); err == nil {
+			outputLog, err = os.Open(outputLogPath)
+			if err != nil {
+				return nil, fmt.Errorf("failed to open zombie output log: %w", err)
+			}
+		}
+
 		return &Client{
 			pid:        pid,
 			runtimeDir: runtimeDir,
 			isZombie:   true,
 			status:     &status,
+			outputLog:  outputLog,
 		}, nil
 	}
 
@@ -109,12 +121,18 @@ func getRuntimeDirForPID(pid int) (string, error) {
 	return "", fmt.Errorf("runtime directory not found for PID %d (tried XDG_RUNTIME_DIR/bgrun and /tmp/.bgrun-%d)", pid, uid)
 }
 
-// Close closes the connection
+// Close closes the connection and any open files
 func (c *Client) Close() error {
+	var err error
 	if c.conn != nil {
-		return c.conn.Close()
+		err = c.conn.Close()
 	}
-	return nil
+	if c.outputLog != nil {
+		if closeErr := c.outputLog.Close(); closeErr != nil && err == nil {
+			err = closeErr
+		}
+	}
+	return err
 }
 
 // GetStatus retrieves the current process status
@@ -302,9 +320,11 @@ func (c *Client) reapZombie() error {
 
 // Attach attaches to output streams
 // streams can be StreamStdout, StreamStderr, or StreamBoth
+// For zombie processes, this is a no-op (output is read from the log file)
 func (c *Client) Attach(streams byte) error {
 	if c.isZombie {
-		return ErrProcessTerminated
+		// For zombies, attach is a no-op - we'll read from the log file
+		return nil
 	}
 	payload := []byte{streams}
 	if err := protocol.WriteMessage(c.conn, protocol.MsgAttach, payload); err != nil {
@@ -343,10 +363,36 @@ type ExitHandler func(exitCode int)
 
 // ReadMessages reads and handles messages from the daemon
 // This is typically run in a goroutine after calling Attach()
+// For zombie processes, reads from the output log file and calls exitHandler
 func (c *Client) ReadMessages(outputHandler OutputHandler, exitHandler ExitHandler) error {
 	if c.isZombie {
-		return ErrProcessTerminated
+		// Read output from log file for zombies
+		if c.outputLog != nil && outputHandler != nil {
+			buf := make([]byte, 4096)
+			for {
+				n, err := c.outputLog.Read(buf)
+				if n > 0 {
+					// All output in log file is stdout (we don't distinguish in log mode)
+					if err := outputHandler(protocol.StreamStdout, buf[:n]); err != nil {
+						return err
+					}
+				}
+				if err != nil {
+					if err == io.EOF {
+						break
+					}
+					return fmt.Errorf("failed to read output log: %w", err)
+				}
+			}
+		}
+
+		// Call exit handler with the cached exit code
+		if exitHandler != nil && c.status != nil && c.status.ExitCode != nil {
+			exitHandler(*c.status.ExitCode)
+		}
+		return nil
 	}
+
 	for {
 		msg, err := protocol.ReadMessage(c.conn)
 		if err != nil {
