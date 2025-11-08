@@ -121,11 +121,14 @@ func (d *Daemon) resizeVTY(rows, cols uint16) error {
 	// pty.Setsize should do this automatically, but let's be explicit
 	d.mu.RLock()
 	pid := d.pid
+	running := d.running
 	d.mu.RUnlock()
 
-	if pid > 0 {
+	if pid > 0 && running {
 		// Send SIGWINCH to the process group (negative PID)
-		syscall.Kill(-pid, syscall.SIGWINCH)
+		if err := syscall.Kill(-pid, syscall.SIGWINCH); err != nil {
+			log.Printf("Warning: failed to send SIGWINCH: %v", err)
+		}
 	}
 
 	log.Printf("PTY resized to %dx%d", rows, cols)
@@ -191,19 +194,26 @@ func (d *Daemon) waitForExit(timeoutSecs uint32) byte {
 
 	// Create a channel to signal when process exits
 	done := make(chan struct{})
+	stop := make(chan struct{})
+
 	go func() {
+		defer close(done)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
 		for {
-			d.mu.RLock()
-			running := d.running
-			d.mu.RUnlock()
-
-			if !running {
-				close(done)
+			select {
+			case <-stop:
 				return
-			}
+			case <-ticker.C:
+				d.mu.RLock()
+				running := d.running
+				d.mu.RUnlock()
 
-			// Poll every 100ms
-			time.Sleep(100 * time.Millisecond)
+				if !running {
+					return
+				}
+			}
 		}
 	}()
 
@@ -212,6 +222,7 @@ func (d *Daemon) waitForExit(timeoutSecs uint32) byte {
 	case <-done:
 		return WaitStatusCompleted
 	case <-time.After(time.Duration(timeoutSecs) * time.Second):
+		close(stop)
 		return WaitStatusTimeout
 	}
 }
@@ -229,22 +240,28 @@ func (d *Daemon) waitForForeground(timeoutSecs uint32) byte {
 
 	// Create a channel to signal when condition is met
 	done := make(chan struct{})
+	stop := make(chan struct{})
+
 	go func() {
+		defer close(done)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
 		for {
-			pgrp, err := d.getForegroundPgrp()
-			if err != nil {
-				// If we can't get the pgrp, wait a bit and try again
-				time.Sleep(100 * time.Millisecond)
-				continue
-			}
-
-			if pgrp == targetPid {
-				close(done)
+			select {
+			case <-stop:
 				return
-			}
+			case <-ticker.C:
+				pgrp, err := d.getForegroundPgrp()
+				if err != nil {
+					// If we can't get the pgrp, continue polling
+					continue
+				}
 
-			// Poll every 100ms
-			time.Sleep(100 * time.Millisecond)
+				if pgrp == targetPid {
+					return
+				}
+			}
 		}
 	}()
 
@@ -253,6 +270,7 @@ func (d *Daemon) waitForForeground(timeoutSecs uint32) byte {
 	case <-done:
 		return WaitStatusCompleted
 	case <-time.After(time.Duration(timeoutSecs) * time.Second):
+		close(stop)
 		return WaitStatusTimeout
 	}
 }

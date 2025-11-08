@@ -30,6 +30,11 @@ func (d *Daemon) startSocketServer() error {
 		return fmt.Errorf("failed to set socket permissions: %w", err)
 	}
 
+	// Store listener for cleanup
+	d.listenerMu.Lock()
+	d.listener = listener
+	d.listenerMu.Unlock()
+
 	go d.acceptConnections(listener)
 
 	log.Printf("Socket server listening on %s", d.socketPath)
@@ -218,6 +223,11 @@ func (d *Daemon) handleResize(conn net.Conn, payload []byte) error {
 	rows := binary.BigEndian.Uint16(payload[0:2])
 	cols := binary.BigEndian.Uint16(payload[2:4])
 
+	// Validate terminal size
+	if rows == 0 || cols == 0 || rows > 500 || cols > 500 {
+		return fmt.Errorf("invalid terminal size: %dx%d", rows, cols)
+	}
+
 	// Resize the PTY
 	if err := d.resizeVTY(rows, cols); err != nil {
 		return err
@@ -265,11 +275,16 @@ func (d *Daemon) handleDetach(conn net.Conn) error {
 
 // handleCloseStdin closes the stdin pipe
 func (d *Daemon) handleCloseStdin(conn net.Conn) error {
-	if d.stdinPipe == nil {
+	d.mu.Lock()
+	if d.stdinPipe == nil || d.stdinClosed {
+		d.mu.Unlock()
 		return fmt.Errorf("stdin is not available for streaming")
 	}
+	pipe := d.stdinPipe
+	d.stdinClosed = true
+	d.mu.Unlock()
 
-	if err := d.stdinPipe.Close(); err != nil {
+	if err := pipe.Close(); err != nil {
 		return fmt.Errorf("failed to close stdin: %w", err)
 	}
 
@@ -311,6 +326,11 @@ func (d *Daemon) handleGetScreen(conn net.Conn) error {
 	screen := d.vtyTermemu.GetScreen()
 	cursorRow, cursorCol := d.vtyTermemu.GetCursor()
 
+	// Check for empty screen
+	if len(screen) == 0 {
+		return fmt.Errorf("screen buffer is empty")
+	}
+
 	// Convert screen to string lines
 	lines := make([]string, len(screen))
 	for i, row := range screen {
@@ -344,10 +364,8 @@ func (d *Daemon) handleShutdown(conn net.Conn) error {
 	// Send acknowledgment before shutting down
 	protocol.WriteMessage(conn, protocol.MsgStatusResponse, []byte(`{"status":"shutting down"}`))
 
-	go func() {
-		d.stop()
-		os.Exit(0)
-	}()
+	// Stop the daemon in a goroutine to allow the response to be sent
+	go d.stop()
 
 	return errShutdown
 }
@@ -419,9 +437,13 @@ func (d *Daemon) handleStderr() {
 // broadcastOutput sends output to all attached clients
 func (d *Daemon) broadcastOutput(stream byte, data []byte) {
 	d.mu.RLock()
-	defer d.mu.RUnlock()
+	clients := make([]*client, 0, len(d.clients))
+	for _, client := range d.clients {
+		clients = append(clients, client)
+	}
+	d.mu.RUnlock()
 
-	for conn, client := range d.clients {
+	for _, client := range clients {
 		if !client.attached {
 			continue
 		}
@@ -436,9 +458,11 @@ func (d *Daemon) broadcastOutput(stream byte, data []byte) {
 		}
 
 		if wantStream {
-			if err := protocol.WriteOutput(conn, stream, data); err != nil {
+			client.writeMu.Lock()
+			if err := protocol.WriteOutput(client.conn, stream, data); err != nil {
 				log.Printf("Error writing output to client: %v", err)
 			}
+			client.writeMu.Unlock()
 		}
 	}
 }

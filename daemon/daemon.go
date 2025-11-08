@@ -62,26 +62,37 @@ type Daemon struct {
 	startedAt time.Time
 	endedAt   *time.Time
 
-	stdinPipe  io.WriteCloser
-	stdoutPipe io.ReadCloser
-	stderrPipe io.ReadCloser
+	stdinPipe   io.WriteCloser
+	stdinClosed bool // tracks if stdin has been closed
+	stdoutPipe  io.ReadCloser
+	stderrPipe  io.ReadCloser
+
+	// File descriptors for cleanup
+	stdinFile  *os.File
+	stdoutFile *os.File
+	stderrFile *os.File
 
 	vtyPty     *os.File          // PTY for VTY mode
 	vtyTermemu *termemu.Terminal // Terminal emulator for VTY mode
 
 	logFile *os.File
 
+	listener   net.Listener
+	listenerMu sync.Mutex
+
 	mu      sync.RWMutex
 	clients map[net.Conn]*client
 
-	closeCh chan struct{}
-	doneCh  chan struct{}
+	closeCh  chan struct{}
+	doneCh   chan struct{}
+	stopOnce sync.Once
 }
 
 type client struct {
 	conn     net.Conn
 	attached bool
 	streams  byte // which streams to send (StreamStdout, StreamStderr, StreamBoth)
+	writeMu  sync.Mutex // protects writes to conn
 }
 
 // New creates a new daemon instance
@@ -234,6 +245,7 @@ func (d *Daemon) setupStdin() error {
 		if err != nil {
 			return err
 		}
+		d.stdinFile = devNull
 		d.cmd.Stdin = devNull
 
 	case StdinFile:
@@ -241,6 +253,7 @@ func (d *Daemon) setupStdin() error {
 		if err != nil {
 			return err
 		}
+		d.stdinFile = f
 		d.cmd.Stdin = f
 
 	case StdinStream:
@@ -262,6 +275,7 @@ func (d *Daemon) setupStdout() error {
 		if err != nil {
 			return err
 		}
+		d.stdoutFile = devNull
 		d.cmd.Stdout = devNull
 
 	case IOModeFile:
@@ -269,6 +283,7 @@ func (d *Daemon) setupStdout() error {
 		if err != nil {
 			return err
 		}
+		d.stdoutFile = f
 		d.cmd.Stdout = f
 
 	case IOModeLog:
@@ -290,6 +305,7 @@ func (d *Daemon) setupStderr() error {
 		if err != nil {
 			return err
 		}
+		d.stderrFile = devNull
 		d.cmd.Stderr = devNull
 
 	case IOModeFile:
@@ -297,6 +313,7 @@ func (d *Daemon) setupStderr() error {
 		if err != nil {
 			return err
 		}
+		d.stderrFile = f
 		d.cmd.Stderr = f
 
 	case IOModeLog:
@@ -334,45 +351,85 @@ func (d *Daemon) GetStatus() *protocol.StatusResponse {
 
 // Stop stops the daemon and cleans up resources
 func (d *Daemon) stop() {
-	close(d.closeCh)
+	d.stopOnce.Do(func() {
+		close(d.closeCh)
 
-	// Close all client connections
-	d.mu.Lock()
-	for conn := range d.clients {
-		conn.Close()
-	}
-	d.mu.Unlock()
+		// Close listener to unblock Accept()
+		d.listenerMu.Lock()
+		if d.listener != nil {
+			if err := d.listener.Close(); err != nil {
+				log.Printf("Error closing listener: %v", err)
+			}
+		}
+		d.listenerMu.Unlock()
 
-	// Close pipes
-	if d.stdinPipe != nil {
-		d.stdinPipe.Close()
-	}
-	if d.stdoutPipe != nil {
-		d.stdoutPipe.Close()
-	}
-	if d.stderrPipe != nil {
-		d.stderrPipe.Close()
-	}
+		// Close all client connections
+		d.mu.Lock()
+		conns := make([]net.Conn, 0, len(d.clients))
+		for conn := range d.clients {
+			conns = append(conns, conn)
+		}
+		d.mu.Unlock()
 
-	// Close log file
-	if d.logFile != nil {
-		d.logFile.Close()
-	}
+		for _, conn := range conns {
+			if err := conn.Close(); err != nil {
+				log.Printf("Error closing client connection: %v", err)
+			}
+		}
 
-	// Close VTY PTY
-	if d.vtyPty != nil {
-		d.vtyPty.Close()
-	}
+		// Close pipes
+		if d.stdinPipe != nil {
+			if err := d.stdinPipe.Close(); err != nil {
+				log.Printf("Error closing stdin pipe: %v", err)
+			}
+		}
+		if d.stdoutPipe != nil {
+			if err := d.stdoutPipe.Close(); err != nil {
+				log.Printf("Error closing stdout pipe: %v", err)
+			}
+		}
+		if d.stderrPipe != nil {
+			if err := d.stderrPipe.Close(); err != nil {
+				log.Printf("Error closing stderr pipe: %v", err)
+			}
+		}
 
-	// Clean up socket file
-	if d.socketPath != "" {
-		os.Remove(d.socketPath)
-	}
+		// Close file descriptors
+		if d.stdinFile != nil {
+			if err := d.stdinFile.Close(); err != nil {
+				log.Printf("Error closing stdin file: %v", err)
+			}
+		}
+		if d.stdoutFile != nil {
+			if err := d.stdoutFile.Close(); err != nil {
+				log.Printf("Error closing stdout file: %v", err)
+			}
+		}
+		if d.stderrFile != nil {
+			if err := d.stderrFile.Close(); err != nil {
+				log.Printf("Error closing stderr file: %v", err)
+			}
+		}
 
-	// Wait for process to exit (if still running)
-	if d.cmd != nil && d.cmd.Process != nil {
-		d.cmd.Process.Wait()
-	}
+		// Close log file
+		if d.logFile != nil {
+			if err := d.logFile.Close(); err != nil {
+				log.Printf("Error closing log file: %v", err)
+			}
+		}
+
+		// Close VTY PTY
+		if d.vtyPty != nil {
+			if err := d.vtyPty.Close(); err != nil {
+				log.Printf("Error closing VTY PTY: %v", err)
+			}
+		}
+
+		// Clean up socket file
+		if d.socketPath != "" {
+			os.Remove(d.socketPath)
+		}
+	})
 }
 
 // waitForProcess waits for the process to exit
@@ -416,13 +473,17 @@ func (d *Daemon) waitForProcess() {
 // broadcastProcessExit sends process exit notification to all clients
 func (d *Daemon) broadcastProcessExit(exitCode int) {
 	d.mu.RLock()
-	clients := make([]net.Conn, 0, len(d.clients))
-	for conn := range d.clients {
-		clients = append(clients, conn)
+	clients := make([]*client, 0, len(d.clients))
+	for _, client := range d.clients {
+		clients = append(clients, client)
 	}
 	d.mu.RUnlock()
 
-	for _, conn := range clients {
-		protocol.WriteProcessExit(conn, exitCode)
+	for _, client := range clients {
+		client.writeMu.Lock()
+		if err := protocol.WriteProcessExit(client.conn, exitCode); err != nil {
+			log.Printf("Error broadcasting exit to client: %v", err)
+		}
+		client.writeMu.Unlock()
 	}
 }
