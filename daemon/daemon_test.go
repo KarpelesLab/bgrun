@@ -24,8 +24,8 @@ func TestDaemonBasic(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -72,8 +72,8 @@ func TestDaemonLongRunning(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -109,8 +109,8 @@ func TestDaemonSignal(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -153,8 +153,8 @@ func TestRuntimeDir(t *testing.T) {
 		t.Errorf("Expected runtime dir %s, got %s", tmpDir, d.RuntimeDir())
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -185,8 +185,8 @@ func TestOutputLogging(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -230,8 +230,8 @@ func TestStdinStream(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -240,8 +240,8 @@ func TestStdinStream(t *testing.T) {
 
 	// Write to stdin
 	testData := []byte("hello from stdin\n")
-	if err := d.handleStdin(testData); err != nil {
-		t.Fatalf("Failed to write stdin: %v", err)
+	if stdinErr := d.handleStdin(testData); stdinErr != nil {
+		t.Fatalf("Failed to write stdin: %v", stdinErr)
 	}
 
 	// Close stdin to let cat exit
@@ -281,8 +281,8 @@ func TestGetStatusResponse(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 

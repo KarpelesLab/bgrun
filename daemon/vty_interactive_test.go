@@ -25,8 +25,8 @@ func TestVTYBasicIO(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -70,8 +70,8 @@ func TestVTYSignalDelivery(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -93,8 +93,8 @@ func TestVTYSignalDelivery(t *testing.T) {
 
 	// Send SIGTERM
 	payload := []byte{byte(syscall.SIGTERM)}
-	if err := protocol.WriteMessage(conn, protocol.MsgSignal, payload); err != nil {
-		t.Fatalf("Failed to send signal: %v", err)
+	if writeErr := protocol.WriteMessage(conn, protocol.MsgSignal, payload); writeErr != nil {
+		t.Fatalf("Failed to send signal: %v", writeErr)
 	}
 
 	// Wait for acknowledgment
@@ -139,8 +139,8 @@ func TestVTYKillProcess(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -186,8 +186,8 @@ func TestVTYStdinWrite(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -239,8 +239,8 @@ func TestVTYResizeWhileRunning(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -307,8 +307,8 @@ func TestWaitForExit(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -326,8 +326,8 @@ func TestWaitForExit(t *testing.T) {
 	binary.BigEndian.PutUint32(payload[0:4], 5) // 5 second timeout
 	payload[4] = protocol.WaitTypeExit
 
-	if err := protocol.WriteMessage(conn, protocol.MsgWait, payload); err != nil {
-		t.Fatalf("Failed to send wait: %v", err)
+	if writeErr := protocol.WriteMessage(conn, protocol.MsgWait, payload); writeErr != nil {
+		t.Fatalf("Failed to send wait: %v", writeErr)
 	}
 
 	// Read response (may receive MsgProcessExit first, ignore it and wait for MsgWaitResponse)
@@ -380,8 +380,8 @@ func TestWaitForExitTimeout(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -398,8 +398,8 @@ func TestWaitForExitTimeout(t *testing.T) {
 	binary.BigEndian.PutUint32(payload[0:4], 1) // 1 second timeout
 	payload[4] = protocol.WaitTypeExit
 
-	if err := protocol.WriteMessage(conn, protocol.MsgWait, payload); err != nil {
-		t.Fatalf("Failed to send wait: %v", err)
+	if writeErr := protocol.WriteMessage(conn, protocol.MsgWait, payload); writeErr != nil {
+		t.Fatalf("Failed to send wait: %v", writeErr)
 	}
 
 	// Read response
@@ -439,8 +439,8 @@ func TestWaitForForeground(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -455,8 +455,8 @@ func TestWaitForForeground(t *testing.T) {
 	// Start a background sleep command in bash
 	// This will put sleep in the foreground temporarily
 	cmd := "sleep 2 &\n"
-	if err := protocol.WriteMessage(conn, protocol.MsgStdin, []byte(cmd)); err != nil {
-		t.Fatalf("Failed to write stdin: %v", err)
+	if writeErr := protocol.WriteMessage(conn, protocol.MsgStdin, []byte(cmd)); writeErr != nil {
+		t.Fatalf("Failed to write stdin: %v", writeErr)
 	}
 
 	// Give bash time to start the background process
@@ -470,8 +470,8 @@ func TestWaitForForeground(t *testing.T) {
 	binary.BigEndian.PutUint32(payload[0:4], 5) // 5 second timeout
 	payload[4] = protocol.WaitTypeForeground
 
-	if err := protocol.WriteMessage(conn, protocol.MsgWait, payload); err != nil {
-		t.Fatalf("Failed to send wait: %v", err)
+	if writeErr := protocol.WriteMessage(conn, protocol.MsgWait, payload); writeErr != nil {
+		t.Fatalf("Failed to send wait: %v", writeErr)
 	}
 
 	// Read response

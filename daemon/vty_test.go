@@ -21,8 +21,8 @@ func TestVTYMode(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -81,8 +81,8 @@ func TestVTYResize(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 

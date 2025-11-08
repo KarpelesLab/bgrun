@@ -444,8 +444,8 @@ func cmdAttachInteractive(c *bgclient.Client) error {
 		for {
 			n, err := os.Stdin.Read(buf)
 			if n > 0 {
-				if err := c.WriteStdin(buf[:n]); err != nil {
-					errCh <- fmt.Errorf("failed to write stdin: %w", err)
+				if writeErr := c.WriteStdin(buf[:n]); writeErr != nil {
+					errCh <- fmt.Errorf("failed to write stdin: %w", writeErr)
 					return
 				}
 			}

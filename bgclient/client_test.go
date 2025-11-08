@@ -85,8 +85,8 @@ func TestClose(t *testing.T) {
 	}
 
 	// Close should succeed
-	if err := c.Close(); err != nil {
-		t.Fatalf("Close failed: %v", err)
+	if closeErr := c.Close(); closeErr != nil {
+		t.Fatalf("Close failed: %v", closeErr)
 	}
 
 	// Double close should fail gracefully
@@ -221,8 +221,8 @@ func TestCloseStdin(t *testing.T) {
 	defer c.Close()
 
 	// Close stdin
-	if err := c.CloseStdin(); err != nil {
-		t.Fatalf("CloseStdin failed: %v", err)
+	if closeErr := c.CloseStdin(); closeErr != nil {
+		t.Fatalf("CloseStdin failed: %v", closeErr)
 	}
 
 	// Wait for cat to exit
@@ -254,8 +254,8 @@ func TestSendSignal(t *testing.T) {
 	defer c.Close()
 
 	// Send SIGTERM
-	if err := c.SendSignal(syscall.SIGTERM); err != nil {
-		t.Fatalf("SendSignal failed: %v", err)
+	if signalErr := c.SendSignal(syscall.SIGTERM); signalErr != nil {
+		t.Fatalf("SendSignal failed: %v", signalErr)
 	}
 
 	// Wait for process to exit
@@ -331,11 +331,20 @@ func TestWaitForExit(t *testing.T) {
 	}
 	_, socketPath := setupDaemon(t, config)
 
+	// Small delay to ensure daemon is fully initialized
+	time.Sleep(50 * time.Millisecond)
+
 	c, err := Connect(socketPath)
 	if err != nil {
 		t.Fatalf("Connect failed: %v", err)
 	}
 	defer c.Close()
+
+	// Verify daemon is running before waiting
+	_, statusErr := c.GetStatus()
+	if statusErr != nil {
+		t.Fatalf("GetStatus failed: %v", statusErr)
+	}
 
 	// Wait for process to exit (should complete)
 	status, err := c.Wait(5, protocol.WaitTypeExit)
@@ -472,8 +481,8 @@ func TestReadMessages(t *testing.T) {
 	defer c.Close()
 
 	// Attach to output
-	if err := c.Attach(protocol.StreamBoth); err != nil {
-		t.Fatalf("Attach failed: %v", err)
+	if attachErr := c.Attach(protocol.StreamBoth); attachErr != nil {
+		t.Fatalf("Attach failed: %v", attachErr)
 	}
 
 	var output bytes.Buffer
@@ -527,8 +536,8 @@ func TestReadMessagesWithError(t *testing.T) {
 	defer c.Close()
 
 	// Attach to output
-	if err := c.Attach(protocol.StreamBoth); err != nil {
-		t.Fatalf("Attach failed: %v", err)
+	if attachErr := c.Attach(protocol.StreamBoth); attachErr != nil {
+		t.Fatalf("Attach failed: %v", attachErr)
 	}
 
 	// Output handler that returns an error

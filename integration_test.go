@@ -27,8 +27,8 @@ func TestClientServerIntegration(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer func() {
 		// Clean up daemon
@@ -94,8 +94,8 @@ func TestClientAttachOutput(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer func() {
 		time.Sleep(100 * time.Millisecond)
@@ -180,8 +180,8 @@ func TestClientStdinWrite(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer func() {
 		time.Sleep(100 * time.Millisecond)
@@ -267,8 +267,8 @@ func TestMultipleClients(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer func() {
 		time.Sleep(100 * time.Millisecond)

@@ -46,8 +46,8 @@ func main() {
 	// Example 2: Attach to output (if process is still running)
 	if status.Running {
 		fmt.Println("=== Attaching to Output ===")
-		if err := c.Attach(protocol.StreamBoth); err != nil {
-			log.Fatalf("Failed to attach: %v", err)
+		if attachErr := c.Attach(protocol.StreamBoth); attachErr != nil {
+			log.Fatalf("Failed to attach: %v", attachErr)
 		}
 
 		// Read messages

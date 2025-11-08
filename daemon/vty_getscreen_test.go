@@ -25,8 +25,8 @@ func TestGetScreen(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -40,8 +40,8 @@ func TestGetScreen(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Send GetScreen request
-	if err := protocol.WriteMessage(c, protocol.MsgGetScreen, nil); err != nil {
-		t.Fatalf("Failed to send GetScreen: %v", err)
+	if writeErr := protocol.WriteMessage(c, protocol.MsgGetScreen, nil); writeErr != nil {
+		t.Fatalf("Failed to send GetScreen: %v", writeErr)
 	}
 
 	// Read response
@@ -103,8 +103,8 @@ func TestGetScreenWithoutVTY(t *testing.T) {
 		t.Fatalf("Failed to create daemon: %v", err)
 	}
 
-	if err := d.Start(); err != nil {
-		t.Fatalf("Failed to start daemon: %v", err)
+	if startErr := d.Start(); startErr != nil {
+		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
 	defer d.stop()
 
@@ -115,8 +115,8 @@ func TestGetScreenWithoutVTY(t *testing.T) {
 	defer c.Close()
 
 	// Send GetScreen request (should fail)
-	if err := protocol.WriteMessage(c, protocol.MsgGetScreen, nil); err != nil {
-		t.Fatalf("Failed to send GetScreen: %v", err)
+	if writeErr := protocol.WriteMessage(c, protocol.MsgGetScreen, nil); writeErr != nil {
+		t.Fatalf("Failed to send GetScreen: %v", writeErr)
 	}
 
 	// Read response - should be an error
