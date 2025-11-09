@@ -474,7 +474,9 @@ func cmdAttachInteractive(c *bgclient.Client) error {
 	doneCh := make(chan struct{})
 
 	// Goroutine to read from stdin and send to server
-	// Implements SSH-style escape sequence: <Enter>~. to detach
+	// Implements SSH-style escape sequences:
+	//   <Enter>~.  -> detach
+	//   <Enter>~~  -> send literal ~ (escape the escape)
 	detachCh := make(chan struct{})
 	go func() {
 		buf := make([]byte, 1024)
@@ -484,31 +486,46 @@ func cmdAttachInteractive(c *bgclient.Client) error {
 			n, err := os.Stdin.Read(buf)
 			if n > 0 {
 				data := buf[:n]
+				output := make([]byte, 0, len(data))
 
-				// Process data looking for escape sequence: <newline>~.
-				// We need to check if the sequence appears in the data
+				// Process data looking for escape sequences
 				for i := 0; i < len(data); i++ {
 					// Check for escape sequence starting at position i
-					// Pattern: previous byte was newline, current is ~, next is .
+					// Pattern: previous byte was newline, current is ~
 					if (lastByte == '\r' || lastByte == '\n') && data[i] == '~' {
-						// Check if next byte is '.'
-						if i+1 < len(data) && data[i+1] == '.' {
-							// Found escape sequence - send data up to (but not including) ~.
-							if i > 0 {
-								c.WriteStdin(data[:i])
+						// Check what follows the ~
+						if i+1 < len(data) {
+							switch data[i+1] {
+							case '.':
+								// Detach sequence: ~.
+								// Send accumulated output (not including the ~.)
+								if len(output) > 0 {
+									c.WriteStdin(output)
+								}
+								close(detachCh)
+								return
+
+							case '~':
+								// Escape sequence: ~~ means literal ~
+								// Add everything up to first ~, then add single ~, skip second ~
+								output = append(output, '~')
+								i++ // Skip the second ~
+								lastByte = '~'
+								continue
 							}
-							close(detachCh)
-							return
 						}
 					}
 
+					output = append(output, data[i])
 					lastByte = data[i]
 				}
 
-				// No escape sequence found, send all data
-				if writeErr := c.WriteStdin(data); writeErr != nil {
-					errCh <- fmt.Errorf("failed to write stdin: %w", writeErr)
-					return
+				// Send processed data
+				if len(output) > 0 {
+					if writeErr := c.WriteStdin(output); writeErr != nil {
+						errCh <- fmt.Errorf("failed to write stdin: %w", writeErr)
+						return
+					}
 				}
 			}
 			if err != nil {
