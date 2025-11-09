@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/KarpelesLab/bgrun/protocol"
+	"github.com/KarpelesLab/bgrun/termemu"
 )
 
 // startSocketServer starts the Unix socket server
@@ -150,6 +151,9 @@ func (d *Daemon) handleMessage(conn net.Conn, msg *protocol.Message) error {
 
 	case protocol.MsgGetScreen:
 		return d.handleGetScreen(conn)
+
+	case protocol.MsgExport:
+		return d.handleExport(conn, msg.Payload)
 
 	case protocol.MsgShutdown:
 		return d.handleShutdown(conn)
@@ -355,6 +359,53 @@ func (d *Daemon) handleGetScreen(conn net.Conn) error {
 	}
 
 	return protocol.WriteScreenResponse(conn, response)
+}
+
+// handleExport exports terminal content in the specified format
+func (d *Daemon) handleExport(conn net.Conn, payload []byte) error {
+	// Parse export request
+	req, err := protocol.ParseExportRequest(payload)
+	if err != nil {
+		return fmt.Errorf("failed to parse export request: %w", err)
+	}
+
+	if !d.config.UseVTY {
+		return fmt.Errorf("VTY is not enabled")
+	}
+
+	if d.vtyTermemu == nil {
+		return fmt.Errorf("terminal emulator is not available")
+	}
+
+	// Convert protocol format to termemu format
+	var format termemu.ExportFormat
+	switch req.Format {
+	case protocol.ExportFormatPlainText:
+		format = termemu.FormatPlainText
+	case protocol.ExportFormatMarkdown:
+		format = termemu.FormatMarkdown
+	case protocol.ExportFormatHTML:
+		format = termemu.FormatHTML
+	default:
+		return fmt.Errorf("unsupported export format: %d", req.Format)
+	}
+
+	// Export terminal content
+	content := d.vtyTermemu.Export(termemu.ExportOptions{
+		Format:                 format,
+		IncludeScrollback:      req.IncludeScrollback,
+		StartLine:              req.StartLine,
+		EndLine:                req.EndLine,
+		PreserveTrailingSpaces: req.PreserveTrailingSpaces,
+	})
+
+	// Create and send response
+	response := &protocol.ExportResponse{
+		Content: content,
+		Format:  req.Format,
+	}
+
+	return protocol.WriteExportResponse(conn, response)
 }
 
 // handleShutdown shuts down the daemon

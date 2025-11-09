@@ -466,3 +466,77 @@ func (c *Client) GetScreen() (*protocol.ScreenResponse, error) {
 
 	return screen, nil
 }
+
+// Export exports the terminal content in the specified format
+func (c *Client) Export(req *protocol.ExportRequest) (*protocol.ExportResponse, error) {
+	if c.isZombie {
+		return nil, ErrProcessTerminated
+	}
+
+	if err := protocol.WriteExportRequest(c.conn, req); err != nil {
+		return nil, fmt.Errorf("failed to send export request: %w", err)
+	}
+
+	// Wait for response
+	msg, err := protocol.ReadMessage(c.conn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if msg.Type == protocol.MsgError {
+		return nil, fmt.Errorf("server error: %s", string(msg.Payload))
+	}
+
+	if msg.Type != protocol.MsgExportResponse {
+		return nil, fmt.Errorf("unexpected response type: 0x%02X", msg.Type)
+	}
+
+	resp, err := protocol.ParseExportResponse(msg.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse export response: %w", err)
+	}
+
+	return resp, nil
+}
+
+// ExportPlainText is a convenience method to export as plain text
+func (c *Client) ExportPlainText(includeScrollback bool) (string, error) {
+	resp, err := c.Export(&protocol.ExportRequest{
+		Format:            protocol.ExportFormatPlainText,
+		IncludeScrollback: includeScrollback,
+		StartLine:         0,
+		EndLine:           -1,
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.Content, nil
+}
+
+// ExportMarkdown is a convenience method to export as Markdown
+func (c *Client) ExportMarkdown(includeScrollback bool) (string, error) {
+	resp, err := c.Export(&protocol.ExportRequest{
+		Format:            protocol.ExportFormatMarkdown,
+		IncludeScrollback: includeScrollback,
+		StartLine:         0,
+		EndLine:           -1,
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.Content, nil
+}
+
+// ExportHTML is a convenience method to export as HTML
+func (c *Client) ExportHTML(includeScrollback bool) (string, error) {
+	resp, err := c.Export(&protocol.ExportRequest{
+		Format:            protocol.ExportFormatHTML,
+		IncludeScrollback: includeScrollback,
+		StartLine:         0,
+		EndLine:           -1,
+	})
+	if err != nil {
+		return "", err
+	}
+	return resp.Content, nil
+}

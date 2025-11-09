@@ -21,6 +21,7 @@ const (
 	MsgCloseStdin MessageType = 0x07
 	MsgWait       MessageType = 0x08
 	MsgGetScreen  MessageType = 0x09
+	MsgExport     MessageType = 0x0A
 	MsgShutdown   MessageType = 0x10
 )
 
@@ -32,6 +33,7 @@ const (
 	MsgResizeResponse MessageType = 0x83
 	MsgWaitResponse   MessageType = 0x88
 	MsgScreenResponse MessageType = 0x89
+	MsgExportResponse MessageType = 0x8A
 	MsgError          MessageType = 0x8F
 	MsgProcessExit    MessageType = 0x90
 )
@@ -80,6 +82,33 @@ type ScreenResponse struct {
 	CursorRow int      `json:"cursor_row"`
 	CursorCol int      `json:"cursor_col"`
 	Lines     []string `json:"lines"` // Each line as a string
+}
+
+// ExportFormat represents the export output format
+type ExportFormat int
+
+const (
+	// ExportFormatPlainText exports as plain text
+	ExportFormatPlainText ExportFormat = 0
+	// ExportFormatMarkdown exports as Markdown with hyperlinks
+	ExportFormatMarkdown ExportFormat = 1
+	// ExportFormatHTML exports as HTML with hyperlinks and styling
+	ExportFormatHTML ExportFormat = 2
+)
+
+// ExportRequest contains export parameters
+type ExportRequest struct {
+	Format                 ExportFormat `json:"format"`
+	IncludeScrollback      bool         `json:"include_scrollback"`
+	StartLine              int          `json:"start_line"`
+	EndLine                int          `json:"end_line"`
+	PreserveTrailingSpaces bool         `json:"preserve_trailing_spaces"`
+}
+
+// ExportResponse contains the exported content
+type ExportResponse struct {
+	Content string `json:"content"`
+	Format  ExportFormat `json:"format"`
 }
 
 // ReadMessage reads a message from the reader
@@ -233,4 +262,40 @@ func ParseScreenResponse(payload []byte) (*ScreenResponse, error) {
 		return nil, fmt.Errorf("failed to parse screen response: %w", err)
 	}
 	return &screen, nil
+}
+
+// WriteExportRequest writes an export request message
+func WriteExportRequest(w io.Writer, req *ExportRequest) error {
+	data, err := json.Marshal(req)
+	if err != nil {
+		return fmt.Errorf("failed to marshal export request: %w", err)
+	}
+	return WriteMessage(w, MsgExport, data)
+}
+
+// ParseExportRequest parses an export request payload
+func ParseExportRequest(payload []byte) (*ExportRequest, error) {
+	var req ExportRequest
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return nil, fmt.Errorf("failed to parse export request: %w", err)
+	}
+	return &req, nil
+}
+
+// WriteExportResponse writes an export response message
+func WriteExportResponse(w io.Writer, resp *ExportResponse) error {
+	data, err := json.Marshal(resp)
+	if err != nil {
+		return fmt.Errorf("failed to marshal export response: %w", err)
+	}
+	return WriteMessage(w, MsgExportResponse, data)
+}
+
+// ParseExportResponse parses an export response payload
+func ParseExportResponse(payload []byte) (*ExportResponse, error) {
+	var resp ExportResponse
+	if err := json.Unmarshal(payload, &resp); err != nil {
+		return nil, fmt.Errorf("failed to parse export response: %w", err)
+	}
+	return &resp, nil
 }
