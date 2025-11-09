@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/KarpelesLab/bgrun/termemu"
 )
@@ -57,23 +56,11 @@ func main() {
 	withScrollback := term.ExportRange(termemu.FormatPlainText, 0, 4, true)
 	fmt.Println(withScrollback)
 
-	// Example 5: Export as HTML and save to file
-	fmt.Println("\n5. HTML Export (saved to terminal_export.html):")
-	fmt.Println("------------------------------------------------")
+	// Example 5: Export as HTML
+	fmt.Println("\n5. HTML Export:")
+	fmt.Println("---------------")
 	html := term.ExportCurrentScreen(termemu.FormatHTML)
-
-	err := os.WriteFile("terminal_export.html", []byte(html), 0644)
-	if err != nil {
-		fmt.Printf("Error writing HTML file: %v\n", err)
-	} else {
-		fmt.Println("HTML export saved to terminal_export.html")
-		fmt.Println("Preview (first 500 chars):")
-		if len(html) > 500 {
-			fmt.Println(html[:500] + "...")
-		} else {
-			fmt.Println(html)
-		}
-	}
+	fmt.Println(html)
 
 	// Example 6: Custom export with options
 	fmt.Println("\n6. Custom Export with Options:")

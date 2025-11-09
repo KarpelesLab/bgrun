@@ -101,12 +101,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("ExportHTML failed: %v", err)
 	}
-	fmt.Println("(Showing first 300 chars)")
-	if len(html) > 300 {
-		fmt.Println(html[:300] + "...")
-	} else {
-		fmt.Println(html)
-	}
+	fmt.Println(html)
 
 	// Example 4: Custom export with specific options
 	fmt.Println("\n4. Custom Export (lines 0-3, with options):")
@@ -123,13 +118,6 @@ func main() {
 	}
 	fmt.Printf("Format: %d\n", resp.Format)
 	fmt.Printf("Content:\n%s\n", resp.Content)
-
-	// Save HTML to file
-	if err := os.WriteFile("export_api_output.html", []byte(html), 0644); err != nil {
-		log.Printf("Warning: Failed to write HTML file: %v", err)
-	} else {
-		fmt.Println("\n✓ HTML export saved to export_api_output.html")
-	}
 
 	fmt.Println("\n=== API Features ===")
 	fmt.Println("✓ Export via Unix socket API")
