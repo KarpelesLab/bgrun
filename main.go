@@ -380,6 +380,14 @@ func cmdAttach(c *bgclient.Client) error {
 	return cmdAttachNonInteractive(c)
 }
 
+func trimTrailingSpaces(s string) string {
+	i := len(s) - 1
+	for i >= 0 && s[i] == ' ' {
+		i--
+	}
+	return s[:i+1]
+}
+
 func cmdAttachNonInteractive(c *bgclient.Client) error {
 	// Attach to both stdout and stderr
 	if err := c.Attach(protocol.StreamBoth); err != nil {
@@ -435,14 +443,20 @@ func cmdAttachInteractive(c *bgclient.Client) error {
 		fmt.Print("\x1b[2J\x1b[H")
 
 		// Display the current screen
-		for _, line := range screen.Lines {
-			fmt.Print(line + "\r\n")
+		// Trim trailing spaces from each line for better display
+		for i, line := range screen.Lines {
+			trimmed := trimTrailingSpaces(line)
+			fmt.Print(trimmed)
+			// Add newline unless it's the last line (to preserve cursor position)
+			if i < len(screen.Lines)-1 {
+				fmt.Print("\r\n")
+			}
 		}
 
 		// Move cursor to the reported position
 		if screen.CursorRow >= 0 && screen.CursorCol >= 0 {
 			// ANSI escape: CSI row ; col H (positions are 1-indexed)
-			fmt.Printf("\x1b[%d;%dH", screen.CursorRow+1, screen.CursorCol+1)
+			fmt.Printf("\r\n\x1b[%d;%dH", screen.CursorRow+1, screen.CursorCol+1)
 		}
 	}
 
