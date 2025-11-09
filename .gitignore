@@ -32,3 +32,6 @@ Thumbs.db
 *.sock
 *.log
 examples/test_resize
+
+# Example output files
+*.html

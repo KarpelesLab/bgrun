@@ -6,12 +6,50 @@ import (
 	"sync"
 )
 
+// Color represents a terminal color (16 base colors + 256 extended)
+type Color int
+
+const (
+	ColorDefault Color = -1 // Default color
+	// Standard 16 colors (0-15)
+	ColorBlack   Color = 0
+	ColorRed     Color = 1
+	ColorGreen   Color = 2
+	ColorYellow  Color = 3
+	ColorBlue    Color = 4
+	ColorMagenta Color = 5
+	ColorCyan    Color = 6
+	ColorWhite   Color = 7
+	ColorBrightBlack   Color = 8
+	ColorBrightRed     Color = 9
+	ColorBrightGreen   Color = 10
+	ColorBrightYellow  Color = 11
+	ColorBrightBlue    Color = 12
+	ColorBrightMagenta Color = 13
+	ColorBrightCyan    Color = 14
+	ColorBrightWhite   Color = 15
+)
+
+// Attributes represents text formatting attributes
+type Attributes struct {
+	Bold      bool
+	Dim       bool
+	Italic    bool
+	Underline bool
+	Blink     bool
+	Reverse   bool
+	Hidden    bool
+	Strike    bool
+	Fg        Color // Foreground color
+	Bg        Color // Background color
+}
+
 // Cell represents a single terminal cell with character and attributes
 type Cell struct {
-	Char        rune
-	HyperlinkID string // OSC 8 hyperlink ID (optional)
+	Char         rune
+	Attr         Attributes
+	HyperlinkID  string // OSC 8 hyperlink ID (optional)
 	HyperlinkURL string // OSC 8 hyperlink URL
-	// Future: attributes like color, bold, etc.
 }
 
 // Hyperlink represents an OSC 8 hyperlink state
@@ -31,7 +69,8 @@ type Terminal struct {
 	cursorCol     int      // Current cursor column (0-indexed)
 	maxScrollback int      // Maximum scrollback lines
 	parser        *vt100Parser
-	hyperlink     *Hyperlink // Current active hyperlink (OSC 8)
+	hyperlink     *Hyperlink  // Current active hyperlink (OSC 8)
+	currentAttr   Attributes  // Current text attributes for new characters
 }
 
 // NewTerminal creates a new terminal emulator
@@ -44,6 +83,10 @@ func NewTerminal(rows, cols int) *Terminal {
 		maxScrollback: 1000, // Keep 1000 lines of scrollback
 		cursorRow:     0,
 		cursorCol:     0,
+		currentAttr: Attributes{
+			Fg: ColorDefault,
+			Bg: ColorDefault,
+		},
 	}
 
 	// Initialize screen
@@ -161,7 +204,10 @@ func (t *Terminal) putChar(ch rune) {
 	if t.cursorRow >= t.rows {
 		t.cursorRow = t.rows - 1
 	}
-	cell := Cell{Char: ch}
+	cell := Cell{
+		Char: ch,
+		Attr: t.currentAttr, // Apply current text attributes
+	}
 	// Apply current hyperlink if active
 	if t.hyperlink != nil {
 		cell.HyperlinkURL = t.hyperlink.URL

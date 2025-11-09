@@ -144,7 +144,7 @@ func (t *Terminal) exportMarkdown(lines [][]Cell, opts ExportOptions) string {
 	return sb.String()
 }
 
-// rowToMarkdown converts a row of cells to Markdown with hyperlinks
+// rowToMarkdown converts a row of cells to Markdown with hyperlinks and formatting
 func (t *Terminal) rowToMarkdown(row []Cell, preserveTrailing bool) string {
 	if len(row) == 0 {
 		return ""
@@ -156,43 +156,67 @@ func (t *Terminal) rowToMarkdown(row []Cell, preserveTrailing bool) string {
 	for i < len(row) {
 		cell := row[i]
 
-		if cell.HyperlinkURL != "" {
-			// Start of hyperlink - collect all consecutive cells with same URL
-			url := cell.HyperlinkURL
-			var linkText strings.Builder
+		// Collect consecutive cells with same formatting (ignoring colors) and hyperlink
+		startI := i
+		bold := cell.Attr.Bold
+		italic := cell.Attr.Italic
+		url := cell.HyperlinkURL
 
-			for i < len(row) && row[i].HyperlinkURL == url {
-				if row[i].Char != 0 {
-					linkText.WriteRune(row[i].Char)
+		for i < len(row) &&
+			row[i].Attr.Bold == bold &&
+			row[i].Attr.Italic == italic &&
+			row[i].HyperlinkURL == url {
+			i++
+		}
+
+		// Extract text from this span
+		var text strings.Builder
+		for j := startI; j < i; j++ {
+			if row[j].Char != 0 {
+				ch := row[j].Char
+				// Only escape Markdown characters if not applying formatting
+				// that uses those same characters
+				if !bold && !italic {
+					if ch == '*' || ch == '_' || ch == '`' || ch == '#' || ch == '\\' {
+						text.WriteByte('\\')
+					}
 				} else {
-					linkText.WriteByte(' ')
+					// When using bold/italic, escape backslashes
+					if ch == '\\' {
+						text.WriteByte('\\')
+					}
 				}
-				i++
+				text.WriteRune(ch)
+			} else {
+				text.WriteByte(' ')
 			}
+		}
+		textStr := text.String()
 
-			// Write Markdown link
-			text := linkText.String()
-			// Escape special Markdown characters in link text
-			text = strings.ReplaceAll(text, "[", "\\[")
-			text = strings.ReplaceAll(text, "]", "\\]")
+		// Apply formatting
+		var formatted string
+		if bold && italic {
+			formatted = "***" + textStr + "***"
+		} else if bold {
+			formatted = "**" + textStr + "**"
+		} else if italic {
+			formatted = "*" + textStr + "*"
+		} else {
+			formatted = textStr
+		}
+
+		// Apply hyperlink if present
+		if url != "" {
+			// Escape brackets in link text
+			formatted = strings.ReplaceAll(formatted, "[", "\\[")
+			formatted = strings.ReplaceAll(formatted, "]", "\\]")
 			sb.WriteString("[")
-			sb.WriteString(text)
+			sb.WriteString(formatted)
 			sb.WriteString("](")
 			sb.WriteString(url)
 			sb.WriteString(")")
 		} else {
-			// Regular character without hyperlink
-			if cell.Char != 0 {
-				// Escape special Markdown characters
-				ch := cell.Char
-				if ch == '*' || ch == '_' || ch == '`' || ch == '#' || ch == '\\' {
-					sb.WriteByte('\\')
-				}
-				sb.WriteRune(ch)
-			} else {
-				sb.WriteByte(' ')
-			}
-			i++
+			sb.WriteString(formatted)
 		}
 	}
 
@@ -232,7 +256,7 @@ func (t *Terminal) exportHTML(lines [][]Cell, opts ExportOptions) string {
 	return sb.String()
 }
 
-// rowToHTML converts a row of cells to HTML with hyperlinks
+// rowToHTML converts a row of cells to HTML with hyperlinks and styling
 func (t *Terminal) rowToHTML(row []Cell, preserveTrailing bool) string {
 	if len(row) == 0 {
 		return ""
@@ -244,41 +268,64 @@ func (t *Terminal) rowToHTML(row []Cell, preserveTrailing bool) string {
 	for i < len(row) {
 		cell := row[i]
 
-		if cell.HyperlinkURL != "" {
-			// Start of hyperlink - collect all consecutive cells with same URL
-			url := cell.HyperlinkURL
-			id := cell.HyperlinkID
-			var linkText strings.Builder
+		// Check if we need styling for this cell
+		hasStyle := cell.Attr.Bold || cell.Attr.Dim || cell.Attr.Italic ||
+			cell.Attr.Underline || cell.Attr.Blink || cell.Attr.Reverse ||
+			cell.Attr.Strike || cell.Attr.Fg != ColorDefault || cell.Attr.Bg != ColorDefault
 
-			for i < len(row) && row[i].HyperlinkURL == url {
-				if row[i].Char != 0 {
-					linkText.WriteString(html.EscapeString(string(row[i].Char)))
-				} else {
-					linkText.WriteByte(' ')
-				}
-				i++
+		// Collect consecutive cells with same attributes and hyperlink
+		startI := i
+		attr := cell.Attr
+		url := cell.HyperlinkURL
+		linkID := cell.HyperlinkID
+
+		for i < len(row) &&
+			row[i].Attr == attr &&
+			row[i].HyperlinkURL == url &&
+			row[i].HyperlinkID == linkID {
+			i++
+		}
+
+		// Extract text from this span
+		var text strings.Builder
+		for j := startI; j < i; j++ {
+			if row[j].Char != 0 {
+				text.WriteString(html.EscapeString(string(row[j].Char)))
+			} else {
+				text.WriteByte(' ')
 			}
+		}
+		textStr := text.String()
 
-			// Write HTML link
+		// Build the HTML for this span
+		if url != "" {
+			// Hyperlink
 			sb.WriteString("<a href=\"")
 			sb.WriteString(html.EscapeString(url))
 			sb.WriteString("\"")
-			if id != "" {
+			if linkID != "" {
 				sb.WriteString(" data-link-id=\"")
-				sb.WriteString(html.EscapeString(id))
+				sb.WriteString(html.EscapeString(linkID))
+				sb.WriteString("\"")
+			}
+			if hasStyle {
+				sb.WriteString(" style=\"")
+				sb.WriteString(attributesToCSS(attr))
 				sb.WriteString("\"")
 			}
 			sb.WriteString(">")
-			sb.WriteString(linkText.String())
+			sb.WriteString(textStr)
 			sb.WriteString("</a>")
+		} else if hasStyle {
+			// Styled text without hyperlink
+			sb.WriteString("<span style=\"")
+			sb.WriteString(attributesToCSS(attr))
+			sb.WriteString("\">")
+			sb.WriteString(textStr)
+			sb.WriteString("</span>")
 		} else {
-			// Regular character without hyperlink
-			if cell.Char != 0 {
-				sb.WriteString(html.EscapeString(string(cell.Char)))
-			} else {
-				sb.WriteByte(' ')
-			}
-			i++
+			// Plain text
+			sb.WriteString(textStr)
 		}
 	}
 
@@ -287,6 +334,91 @@ func (t *Terminal) rowToHTML(row []Cell, preserveTrailing bool) string {
 		str = strings.TrimRight(str, " ")
 	}
 	return str
+}
+
+// attributesToCSS converts terminal attributes to CSS style string
+func attributesToCSS(attr Attributes) string {
+	var styles []string
+
+	// Text formatting
+	if attr.Bold {
+		styles = append(styles, "font-weight: bold")
+	}
+	if attr.Dim {
+		styles = append(styles, "opacity: 0.5")
+	}
+	if attr.Italic {
+		styles = append(styles, "font-style: italic")
+	}
+	if attr.Underline {
+		styles = append(styles, "text-decoration: underline")
+	}
+	if attr.Strike {
+		styles = append(styles, "text-decoration: line-through")
+	}
+	if attr.Blink {
+		styles = append(styles, "animation: blink 1s step-start infinite")
+	}
+
+	// Colors
+	var fgColor, bgColor string
+	if attr.Reverse {
+		// Swap foreground and background when reversed
+		fgColor = colorToCSS(attr.Bg, false)
+		bgColor = colorToCSS(attr.Fg, true)
+	} else {
+		fgColor = colorToCSS(attr.Fg, false)
+		bgColor = colorToCSS(attr.Bg, true)
+	}
+
+	if fgColor != "" {
+		styles = append(styles, "color: "+fgColor)
+	}
+	if bgColor != "" {
+		styles = append(styles, "background-color: "+bgColor)
+	}
+
+	if attr.Hidden {
+		styles = append(styles, "visibility: hidden")
+	}
+
+	return strings.Join(styles, "; ")
+}
+
+// colorToCSS converts a Color to CSS color value
+func colorToCSS(c Color, isBackground bool) string {
+	// Handle default color
+	if c == ColorDefault {
+		return ""
+	}
+
+	// Color palette (standard VGA colors)
+	colors := map[Color]string{
+		ColorBlack:         "#000000",
+		ColorRed:           "#aa0000",
+		ColorGreen:         "#00aa00",
+		ColorYellow:        "#aa5500",
+		ColorBlue:          "#0000aa",
+		ColorMagenta:       "#aa00aa",
+		ColorCyan:          "#00aaaa",
+		ColorWhite:         "#aaaaaa",
+		ColorBrightBlack:   "#555555",
+		ColorBrightRed:     "#ff5555",
+		ColorBrightGreen:   "#55ff55",
+		ColorBrightYellow:  "#ffff55",
+		ColorBrightBlue:    "#5555ff",
+		ColorBrightMagenta: "#ff55ff",
+		ColorBrightCyan:    "#55ffff",
+		ColorBrightWhite:   "#ffffff",
+	}
+
+	if color, ok := colors[c]; ok {
+		return color
+	}
+
+	// For extended 256 colors, return a generic representation
+	// This would need to be expanded for full 256-color support
+	return ""
 }
 
 // ExportCurrentScreen exports only the current screen view

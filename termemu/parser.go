@@ -202,8 +202,7 @@ func (p *vt100Parser) executeCSI(cmd byte) {
 		}
 
 	case 'm': // SGR - Select Graphic Rendition (colors, bold, etc.)
-		// For now, just ignore color codes
-		// TODO: implement color support
+		p.processSGR(params)
 
 	case 'r': // Set scrolling region
 		// TODO: implement scrolling regions
@@ -315,5 +314,184 @@ func (p *vt100Parser) executeOSC(data string) {
 	p.term.hyperlink = &Hyperlink{
 		URL: uri,
 		ID:  id,
+	}
+}
+
+// processSGR processes SGR (Select Graphic Rendition) parameters
+func (p *vt100Parser) processSGR(params []int) {
+	// If no params, default to 0 (reset)
+	if len(params) == 0 {
+		params = []int{0}
+	}
+
+	for i := 0; i < len(params); i++ {
+		param := params[i]
+
+		switch param {
+		case 0: // Reset all attributes
+			p.term.currentAttr = Attributes{
+				Fg: ColorDefault,
+				Bg: ColorDefault,
+			}
+
+		case 1: // Bold
+			p.term.currentAttr.Bold = true
+
+		case 2: // Dim
+			p.term.currentAttr.Dim = true
+
+		case 3: // Italic
+			p.term.currentAttr.Italic = true
+
+		case 4: // Underline
+			p.term.currentAttr.Underline = true
+
+		case 5: // Blink
+			p.term.currentAttr.Blink = true
+
+		case 7: // Reverse
+			p.term.currentAttr.Reverse = true
+
+		case 8: // Hidden
+			p.term.currentAttr.Hidden = true
+
+		case 9: // Strike
+			p.term.currentAttr.Strike = true
+
+		case 22: // Normal intensity (not bold/dim)
+			p.term.currentAttr.Bold = false
+			p.term.currentAttr.Dim = false
+
+		case 23: // Not italic
+			p.term.currentAttr.Italic = false
+
+		case 24: // Not underlined
+			p.term.currentAttr.Underline = false
+
+		case 25: // Not blinking
+			p.term.currentAttr.Blink = false
+
+		case 27: // Not reversed
+			p.term.currentAttr.Reverse = false
+
+		case 28: // Not hidden
+			p.term.currentAttr.Hidden = false
+
+		case 29: // Not strikethrough
+			p.term.currentAttr.Strike = false
+
+		// Foreground colors (30-37)
+		case 30:
+			p.term.currentAttr.Fg = ColorBlack
+		case 31:
+			p.term.currentAttr.Fg = ColorRed
+		case 32:
+			p.term.currentAttr.Fg = ColorGreen
+		case 33:
+			p.term.currentAttr.Fg = ColorYellow
+		case 34:
+			p.term.currentAttr.Fg = ColorBlue
+		case 35:
+			p.term.currentAttr.Fg = ColorMagenta
+		case 36:
+			p.term.currentAttr.Fg = ColorCyan
+		case 37:
+			p.term.currentAttr.Fg = ColorWhite
+
+		case 38: // Extended foreground color
+			// 38;5;n for 256 color, 38;2;r;g;b for RGB
+			if i+2 < len(params) && params[i+1] == 5 {
+				// 256 color mode: 38;5;n
+				colorIdx := params[i+2]
+				// For now, map 256 colors to basic 16 colors
+				if colorIdx < 16 {
+					p.term.currentAttr.Fg = Color(colorIdx)
+				}
+				i += 2 // Skip next two params
+			} else if i+4 < len(params) && params[i+1] == 2 {
+				// RGB mode: 38;2;r;g;b
+				// For now, we'll just skip this as we only support 16 colors
+				i += 4 // Skip next four params
+			}
+
+		case 39: // Default foreground color
+			p.term.currentAttr.Fg = ColorDefault
+
+		// Background colors (40-47)
+		case 40:
+			p.term.currentAttr.Bg = ColorBlack
+		case 41:
+			p.term.currentAttr.Bg = ColorRed
+		case 42:
+			p.term.currentAttr.Bg = ColorGreen
+		case 43:
+			p.term.currentAttr.Bg = ColorYellow
+		case 44:
+			p.term.currentAttr.Bg = ColorBlue
+		case 45:
+			p.term.currentAttr.Bg = ColorMagenta
+		case 46:
+			p.term.currentAttr.Bg = ColorCyan
+		case 47:
+			p.term.currentAttr.Bg = ColorWhite
+
+		case 48: // Extended background color
+			// 48;5;n for 256 color, 48;2;r;g;b for RGB
+			if i+2 < len(params) && params[i+1] == 5 {
+				// 256 color mode: 48;5;n
+				colorIdx := params[i+2]
+				// For now, map 256 colors to basic 16 colors
+				if colorIdx < 16 {
+					p.term.currentAttr.Bg = Color(colorIdx)
+				}
+				i += 2 // Skip next two params
+			} else if i+4 < len(params) && params[i+1] == 2 {
+				// RGB mode: 48;2;r;g;b
+				// For now, we'll just skip this as we only support 16 colors
+				i += 4 // Skip next four params
+			}
+
+		case 49: // Default background color
+			p.term.currentAttr.Bg = ColorDefault
+
+		// Bright foreground colors (90-97)
+		case 90:
+			p.term.currentAttr.Fg = ColorBrightBlack
+		case 91:
+			p.term.currentAttr.Fg = ColorBrightRed
+		case 92:
+			p.term.currentAttr.Fg = ColorBrightGreen
+		case 93:
+			p.term.currentAttr.Fg = ColorBrightYellow
+		case 94:
+			p.term.currentAttr.Fg = ColorBrightBlue
+		case 95:
+			p.term.currentAttr.Fg = ColorBrightMagenta
+		case 96:
+			p.term.currentAttr.Fg = ColorBrightCyan
+		case 97:
+			p.term.currentAttr.Fg = ColorBrightWhite
+
+		// Bright background colors (100-107)
+		case 100:
+			p.term.currentAttr.Bg = ColorBrightBlack
+		case 101:
+			p.term.currentAttr.Bg = ColorBrightRed
+		case 102:
+			p.term.currentAttr.Bg = ColorBrightGreen
+		case 103:
+			p.term.currentAttr.Bg = ColorBrightYellow
+		case 104:
+			p.term.currentAttr.Bg = ColorBrightBlue
+		case 105:
+			p.term.currentAttr.Bg = ColorBrightMagenta
+		case 106:
+			p.term.currentAttr.Bg = ColorBrightCyan
+		case 107:
+			p.term.currentAttr.Bg = ColorBrightWhite
+
+		default:
+			// Unknown SGR code, ignore
+		}
 	}
 }
