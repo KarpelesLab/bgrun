@@ -474,12 +474,39 @@ func cmdAttachInteractive(c *bgclient.Client) error {
 	doneCh := make(chan struct{})
 
 	// Goroutine to read from stdin and send to server
+	// Implements SSH-style escape sequence: <Enter>~. to detach
+	detachCh := make(chan struct{})
 	go func() {
 		buf := make([]byte, 1024)
+		var lastByte byte // Track last byte for escape sequence detection
+
 		for {
 			n, err := os.Stdin.Read(buf)
 			if n > 0 {
-				if writeErr := c.WriteStdin(buf[:n]); writeErr != nil {
+				data := buf[:n]
+
+				// Process data looking for escape sequence: <newline>~.
+				// We need to check if the sequence appears in the data
+				for i := 0; i < len(data); i++ {
+					// Check for escape sequence starting at position i
+					// Pattern: previous byte was newline, current is ~, next is .
+					if (lastByte == '\r' || lastByte == '\n') && data[i] == '~' {
+						// Check if next byte is '.'
+						if i+1 < len(data) && data[i+1] == '.' {
+							// Found escape sequence - send data up to (but not including) ~.
+							if i > 0 {
+								c.WriteStdin(data[:i])
+							}
+							close(detachCh)
+							return
+						}
+					}
+
+					lastByte = data[i]
+				}
+
+				// No escape sequence found, send all data
+				if writeErr := c.WriteStdin(data); writeErr != nil {
 					errCh <- fmt.Errorf("failed to write stdin: %w", writeErr)
 					return
 				}
@@ -509,7 +536,7 @@ func cmdAttachInteractive(c *bgclient.Client) error {
 		}
 	}()
 
-	// Main loop: handle resize events
+	// Main loop: handle resize events and detach signal
 	for {
 		select {
 		case <-resizeCh:
@@ -517,6 +544,13 @@ func cmdAttachInteractive(c *bgclient.Client) error {
 			if err == nil {
 				c.Resize(uint16(rows), uint16(cols))
 			}
+
+		case <-detachCh:
+			// User pressed <Enter>~. to detach
+			c.Detach()
+			state.Restore()
+			fmt.Println("\r\n[Detached]")
+			return nil
 
 		case err := <-errCh:
 			state.Restore()
