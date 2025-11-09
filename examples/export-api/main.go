@@ -74,7 +74,7 @@ func main() {
 	// Wait for output to be written
 	time.Sleep(500 * time.Millisecond)
 
-	fmt.Println("=== EXPORT API DEMO ===\n")
+	fmt.Println("=== EXPORT API DEMO ===")
 
 	// Example 1: Export as plain text
 	fmt.Println("1. Plain Text Export (via API):")

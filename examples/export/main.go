@@ -30,7 +30,7 @@ func main() {
 		term.Write([]byte(fmt.Sprintf("Scrollback line %d\n", i+1)))
 	}
 
-	fmt.Println("=== EXPORT EXAMPLES ===\n")
+	fmt.Println("=== EXPORT EXAMPLES ===")
 
 	// Example 1: Export current screen as plain text
 	fmt.Println("1. Plain Text Export (Current Screen):")
