@@ -420,14 +420,35 @@ func cmdAttachInteractive(c *bgclient.Client) error {
 		return fmt.Errorf("failed to get terminal size: %w", err)
 	}
 
+	// Send initial resize before getting screen (ensures screen is sized correctly)
+	if err := c.Resize(uint16(rows), uint16(cols)); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: failed to resize terminal: %v\n", err)
+	}
+
+	// Get and display current screen state
+	screen, err := c.GetScreen()
+	if err != nil {
+		// Non-fatal - just warn and continue
+		fmt.Fprintf(os.Stderr, "Warning: failed to get screen state: %v\r\n", err)
+	} else {
+		// Clear screen and move to top-left
+		fmt.Print("\x1b[2J\x1b[H")
+
+		// Display the current screen
+		for _, line := range screen.Lines {
+			fmt.Print(line + "\r\n")
+		}
+
+		// Move cursor to the reported position
+		if screen.CursorRow >= 0 && screen.CursorCol >= 0 {
+			// ANSI escape: CSI row ; col H (positions are 1-indexed)
+			fmt.Printf("\x1b[%d;%dH", screen.CursorRow+1, screen.CursorCol+1)
+		}
+	}
+
 	// Attach to output
 	if err := c.Attach(protocol.StreamBoth); err != nil {
 		return err
-	}
-
-	// Send initial resize
-	if err := c.Resize(uint16(rows), uint16(cols)); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: failed to resize terminal: %v\n", err)
 	}
 
 	// Watch for resize signals
