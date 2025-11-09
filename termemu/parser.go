@@ -18,6 +18,8 @@ const (
 	stateNormal parserState = iota
 	stateEscape
 	stateCSI
+	stateOSC        // Operating System Command
+	stateOSCEscape  // After ESC in OSC (expecting \)
 )
 
 func newVT100Parser(term *Terminal) *vt100Parser {
@@ -42,6 +44,10 @@ func (p *vt100Parser) processByte(b byte) {
 		p.processEscape(b)
 	case stateCSI:
 		p.processCSI(b)
+	case stateOSC:
+		p.processOSC(b)
+	case stateOSCEscape:
+		p.processOSCEscape(b)
 	}
 }
 
@@ -73,6 +79,9 @@ func (p *vt100Parser) processEscape(b byte) {
 	switch b {
 	case '[': // CSI - Control Sequence Introducer
 		p.state = stateCSI
+		p.buf = p.buf[:0]
+	case ']': // OSC - Operating System Command
+		p.state = stateOSC
 		p.buf = p.buf[:0]
 	case 'M': // Reverse index (move up with scroll)
 		if p.term.cursorRow > 0 {
@@ -224,4 +233,87 @@ func (p *vt100Parser) parseParams(s string) []int {
 		}
 	}
 	return params
+}
+
+func (p *vt100Parser) processOSC(b byte) {
+	// OSC sequences end with BEL (\x07) or ESC \ (ST - String Terminator)
+	if b == '\x07' { // BEL
+		p.executeOSC(string(p.buf))
+		p.state = stateNormal
+		return
+	}
+	if b == '\x1b' { // ESC (might be followed by \)
+		p.state = stateOSCEscape
+		return
+	}
+	// Accumulate OSC data
+	p.buf = append(p.buf, b)
+}
+
+func (p *vt100Parser) processOSCEscape(b byte) {
+	if b == '\\' { // ST - String Terminator
+		p.executeOSC(string(p.buf))
+		p.state = stateNormal
+		return
+	}
+	// Not a valid ST, treat ESC as part of data and continue
+	p.buf = append(p.buf, '\x1b', b)
+	p.state = stateOSC
+}
+
+func (p *vt100Parser) executeOSC(data string) {
+	// OSC format: command ; parameters
+	// For OSC 8: "8;params;URI" or "8;;" to close hyperlink
+	parts := strings.SplitN(data, ";", 2)
+	if len(parts) < 1 {
+		return
+	}
+
+	cmd := parts[0]
+	if cmd != "8" {
+		// Only handle OSC 8 (hyperlinks) for now
+		return
+	}
+
+	if len(parts) < 2 {
+		// Invalid OSC 8, ignore
+		return
+	}
+
+	// Parse OSC 8: "8;params;URI"
+	rest := parts[1]
+	oscParts := strings.SplitN(rest, ";", 2)
+
+	if len(oscParts) < 2 {
+		// Invalid format, clear hyperlink
+		p.term.hyperlink = nil
+		return
+	}
+
+	params := oscParts[0]
+	uri := oscParts[1]
+
+	if uri == "" {
+		// Empty URI means close/clear the hyperlink
+		p.term.hyperlink = nil
+		return
+	}
+
+	// Parse parameters (key=value pairs separated by :)
+	// Currently only 'id' parameter is defined
+	id := ""
+	if params != "" {
+		for _, param := range strings.Split(params, ":") {
+			if strings.HasPrefix(param, "id=") {
+				id = strings.TrimPrefix(param, "id=")
+				break
+			}
+		}
+	}
+
+	// Set the current hyperlink
+	p.term.hyperlink = &Hyperlink{
+		URL: uri,
+		ID:  id,
+	}
 }

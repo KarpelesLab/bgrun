@@ -8,8 +8,16 @@ import (
 
 // Cell represents a single terminal cell with character and attributes
 type Cell struct {
-	Char rune
+	Char        rune
+	HyperlinkID string // OSC 8 hyperlink ID (optional)
+	HyperlinkURL string // OSC 8 hyperlink URL
 	// Future: attributes like color, bold, etc.
+}
+
+// Hyperlink represents an OSC 8 hyperlink state
+type Hyperlink struct {
+	URL string
+	ID  string
 }
 
 // Terminal represents a terminal emulator with VT100 support
@@ -23,6 +31,7 @@ type Terminal struct {
 	cursorCol     int      // Current cursor column (0-indexed)
 	maxScrollback int      // Maximum scrollback lines
 	parser        *vt100Parser
+	hyperlink     *Hyperlink // Current active hyperlink (OSC 8)
 }
 
 // NewTerminal creates a new terminal emulator
@@ -152,7 +161,13 @@ func (t *Terminal) putChar(ch rune) {
 	if t.cursorRow >= t.rows {
 		t.cursorRow = t.rows - 1
 	}
-	t.screen[t.cursorRow][t.cursorCol] = Cell{Char: ch}
+	cell := Cell{Char: ch}
+	// Apply current hyperlink if active
+	if t.hyperlink != nil {
+		cell.HyperlinkURL = t.hyperlink.URL
+		cell.HyperlinkID = t.hyperlink.ID
+	}
+	t.screen[t.cursorRow][t.cursorCol] = cell
 	t.cursorCol++
 }
 

@@ -2,6 +2,7 @@ package bgclient
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -580,5 +581,205 @@ func TestReadMessagesEOF(t *testing.T) {
 	if err != nil {
 		// EOF is acceptable here
 		t.Logf("ReadMessages returned: %v", err)
+	}
+}
+
+func TestNew(t *testing.T) {
+	config := &daemon.Config{
+		Command:    []string{"sleep", "10"},
+		StdinMode:  daemon.StdinNull,
+		StdoutMode: daemon.IOModeLog,
+		StderrMode: daemon.IOModeLog,
+	}
+
+	tmpDir := t.TempDir()
+	config.RuntimeDir = tmpDir
+
+	d, err := daemon.New(config)
+	if err != nil {
+		t.Fatalf("Failed to create daemon: %v", err)
+	}
+
+	if err := d.Start(); err != nil {
+		t.Fatalf("Failed to start daemon: %v", err)
+	}
+
+	// Get the daemon PID
+	status := d.GetStatus()
+	if status == nil || status.PID == 0 {
+		t.Fatal("Failed to get daemon status")
+	}
+
+	// Set environment variable for runtime directory discovery
+	oldXdgDir := os.Getenv("XDG_RUNTIME_DIR")
+	defer os.Setenv("XDG_RUNTIME_DIR", oldXdgDir)
+	os.Setenv("XDG_RUNTIME_DIR", "")
+
+	// Create symlink in /tmp for the PID
+	uid := os.Getuid()
+	bgrunDir := filepath.Join("/tmp", fmt.Sprintf(".bgrun-%d", uid))
+	if err := os.MkdirAll(bgrunDir, 0700); err != nil {
+		t.Fatalf("Failed to create bgrun dir: %v", err)
+	}
+	defer os.RemoveAll(bgrunDir)
+
+	pidDir := filepath.Join(bgrunDir, fmt.Sprintf("%d", status.PID))
+	if err := os.Symlink(tmpDir, pidDir); err != nil {
+		t.Fatalf("Failed to create symlink: %v", err)
+	}
+
+	// Wait for socket to be ready
+	socketPath := filepath.Join(tmpDir, "control.sock")
+	maxRetries := 50
+	for i := 0; i < maxRetries; i++ {
+		if _, err := os.Stat(socketPath); err == nil {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Test New with the daemon PID
+	c, err := New(status.PID)
+	if err != nil {
+		t.Fatalf("New failed: %v", err)
+	}
+	defer c.Close()
+
+	// Verify we can get status through the new client
+	clientStatus, err := c.GetStatus()
+	if err != nil {
+		t.Fatalf("GetStatus failed: %v", err)
+	}
+
+	if clientStatus.PID != status.PID {
+		t.Errorf("PID mismatch: expected %d, got %d", status.PID, clientStatus.PID)
+	}
+
+	// Test New with non-existent PID
+	_, err = New(999999)
+	if err == nil {
+		t.Error("Expected error for non-existent PID")
+	}
+}
+
+func TestGetScreen(t *testing.T) {
+	config := &daemon.Config{
+		Command:    []string{"bash", "-c", "echo 'Hello, World!'; sleep 10"},
+		StdinMode:  daemon.StdinStream,
+		StdoutMode: daemon.IOModeLog,
+		StderrMode: daemon.IOModeLog,
+		UseVTY:     true,
+	}
+	_, socketPath := setupDaemon(t, config)
+
+	c, err := Connect(socketPath)
+	if err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	defer c.Close()
+
+	// Wait a bit for the process to write output
+	time.Sleep(200 * time.Millisecond)
+
+	// Get screen content
+	screen, err := c.GetScreen()
+	if err != nil {
+		t.Fatalf("GetScreen failed: %v", err)
+	}
+
+	if screen == nil {
+		t.Fatal("GetScreen returned nil screen")
+	}
+
+	if screen.Rows != 24 {
+		t.Errorf("Expected 24 rows, got %d", screen.Rows)
+	}
+
+	if screen.Cols != 80 {
+		t.Errorf("Expected 80 cols, got %d", screen.Cols)
+	}
+
+	if len(screen.Lines) == 0 {
+		t.Error("Expected non-empty screen lines")
+	}
+
+	t.Logf("Screen content: %+v", screen)
+}
+
+func TestGetScreenWithoutVTY(t *testing.T) {
+	config := &daemon.Config{
+		Command:    []string{"sleep", "10"},
+		StdinMode:  daemon.StdinNull,
+		StdoutMode: daemon.IOModeLog,
+		StderrMode: daemon.IOModeLog,
+	}
+	_, socketPath := setupDaemon(t, config)
+
+	c, err := Connect(socketPath)
+	if err != nil {
+		t.Fatalf("Connect failed: %v", err)
+	}
+	defer c.Close()
+
+	// GetScreen should fail without VTY
+	_, err = c.GetScreen()
+	if err == nil {
+		t.Error("Expected error when getting screen without VTY")
+	}
+}
+
+func TestGetScreenZombie(t *testing.T) {
+	// Create a zombie state by manually creating status.json without a running daemon
+	tmpDir := t.TempDir()
+
+	// Create a fake zombie status.json
+	status := protocol.StatusResponse{
+		PID:       12345,
+		Running:   false,
+		ExitCode:  func() *int { code := 0; return &code }(),
+		StartedAt: "2025-01-01T00:00:00Z",
+		EndedAt:   func() *string { t := "2025-01-01T00:00:01Z"; return &t }(),
+		Command:   []string{"true"},
+		HasVTY:    false,
+	}
+
+	statusPath := filepath.Join(tmpDir, "status.json")
+	statusData, err := json.Marshal(&status)
+	if err != nil {
+		t.Fatalf("Failed to marshal status: %v", err)
+	}
+
+	if err := os.WriteFile(statusPath, statusData, 0644); err != nil {
+		t.Fatalf("Failed to write status.json: %v", err)
+	}
+
+	// Set environment for runtime directory discovery
+	oldXdgDir := os.Getenv("XDG_RUNTIME_DIR")
+	defer os.Setenv("XDG_RUNTIME_DIR", oldXdgDir)
+	os.Setenv("XDG_RUNTIME_DIR", "")
+
+	uid := os.Getuid()
+	bgrunDir := filepath.Join("/tmp", fmt.Sprintf(".bgrun-%d", uid))
+	if err := os.MkdirAll(bgrunDir, 0700); err != nil {
+		t.Fatalf("Failed to create bgrun dir: %v", err)
+	}
+	defer os.RemoveAll(bgrunDir)
+
+	pidDir := filepath.Join(bgrunDir, fmt.Sprintf("%d", status.PID))
+	if err := os.Symlink(tmpDir, pidDir); err != nil {
+		t.Fatalf("Failed to create symlink: %v", err)
+	}
+
+	// Create zombie client (no socket, only status.json)
+	c, err := New(status.PID)
+	if err != nil {
+		t.Fatalf("Failed to create zombie client: %v", err)
+	}
+	defer c.Close()
+
+	// GetScreen should return ErrProcessTerminated for zombie
+	_, err = c.GetScreen()
+	if err != ErrProcessTerminated {
+		t.Errorf("Expected ErrProcessTerminated, got %v", err)
 	}
 }

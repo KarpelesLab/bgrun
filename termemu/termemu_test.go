@@ -444,3 +444,219 @@ func TestFormat(t *testing.T) {
 		t.Errorf("Expected format to contain 'scrollback=0 lines', got: %s", format)
 	}
 }
+
+// OSC 8 (Hyperlink) Tests
+
+func TestOSC8HyperlinkBasic(t *testing.T) {
+	term := NewTerminal(24, 80)
+
+	// Open hyperlink with ST terminator (ESC \)
+	term.Write([]byte("\x1b]8;;http://example.com\x1b\\"))
+	term.Write([]byte("Example"))
+	// Close hyperlink
+	term.Write([]byte("\x1b]8;;\x1b\\"))
+	term.Write([]byte(" Link"))
+
+	screen := term.GetScreen()
+
+	// First 7 characters should have the hyperlink
+	for i := 0; i < 7; i++ {
+		if screen[0][i].HyperlinkURL != "http://example.com" {
+			t.Errorf("Cell %d should have hyperlink URL, got: %s", i, screen[0][i].HyperlinkURL)
+		}
+	}
+
+	// Characters after closing should not have hyperlink
+	for i := 7; i < 12; i++ {
+		if screen[0][i].HyperlinkURL != "" {
+			t.Errorf("Cell %d should not have hyperlink URL, got: %s", i, screen[0][i].HyperlinkURL)
+		}
+	}
+}
+
+func TestOSC8HyperlinkWithBEL(t *testing.T) {
+	term := NewTerminal(24, 80)
+
+	// Open hyperlink with BEL terminator
+	term.Write([]byte("\x1b]8;;https://github.com\x07"))
+	term.Write([]byte("GitHub"))
+	// Close hyperlink with BEL
+	term.Write([]byte("\x1b]8;;\x07"))
+
+	screen := term.GetScreen()
+
+	// All 6 characters should have the hyperlink
+	for i := 0; i < 6; i++ {
+		if screen[0][i].HyperlinkURL != "https://github.com" {
+			t.Errorf("Cell %d should have hyperlink URL, got: %s", i, screen[0][i].HyperlinkURL)
+		}
+	}
+}
+
+func TestOSC8HyperlinkWithID(t *testing.T) {
+	term := NewTerminal(24, 80)
+
+	// Open hyperlink with ID parameter
+	term.Write([]byte("\x1b]8;id=link123;http://test.com\x1b\\"))
+	term.Write([]byte("Test"))
+	term.Write([]byte("\x1b]8;;\x1b\\"))
+
+	screen := term.GetScreen()
+
+	// Characters should have both URL and ID
+	for i := 0; i < 4; i++ {
+		if screen[0][i].HyperlinkURL != "http://test.com" {
+			t.Errorf("Cell %d should have hyperlink URL, got: %s", i, screen[0][i].HyperlinkURL)
+		}
+		if screen[0][i].HyperlinkID != "link123" {
+			t.Errorf("Cell %d should have hyperlink ID, got: %s", i, screen[0][i].HyperlinkID)
+		}
+	}
+}
+
+func TestOSC8MultipleHyperlinks(t *testing.T) {
+	term := NewTerminal(24, 80)
+
+	// First hyperlink
+	term.Write([]byte("\x1b]8;;http://first.com\x1b\\First\x1b]8;;\x1b\\ "))
+	// Second hyperlink
+	term.Write([]byte("\x1b]8;;http://second.com\x1b\\Second\x1b]8;;\x1b\\"))
+
+	screen := term.GetScreen()
+
+	// Check first link (positions 0-4)
+	for i := 0; i < 5; i++ {
+		if screen[0][i].HyperlinkURL != "http://first.com" {
+			t.Errorf("Cell %d should have first URL, got: %s", i, screen[0][i].HyperlinkURL)
+		}
+	}
+
+	// Position 5 should be space without link
+	if screen[0][5].HyperlinkURL != "" {
+		t.Errorf("Cell 5 should not have hyperlink, got: %s", screen[0][5].HyperlinkURL)
+	}
+
+	// Check second link (positions 6-11)
+	for i := 6; i < 12; i++ {
+		if screen[0][i].HyperlinkURL != "http://second.com" {
+			t.Errorf("Cell %d should have second URL, got: %s", i, screen[0][i].HyperlinkURL)
+		}
+	}
+}
+
+func TestOSC8HyperlinkSwitchWithoutClose(t *testing.T) {
+	term := NewTerminal(24, 80)
+
+	// Open first hyperlink
+	term.Write([]byte("\x1b]8;;http://first.com\x1b\\First"))
+	// Open second hyperlink without closing first (state machine behavior)
+	term.Write([]byte("\x1b]8;;http://second.com\x1b\\Second"))
+
+	screen := term.GetScreen()
+
+	// First 5 characters should have first link
+	for i := 0; i < 5; i++ {
+		if screen[0][i].HyperlinkURL != "http://first.com" {
+			t.Errorf("Cell %d should have first URL, got: %s", i, screen[0][i].HyperlinkURL)
+		}
+	}
+
+	// Next 6 characters should have second link
+	for i := 5; i < 11; i++ {
+		if screen[0][i].HyperlinkURL != "http://second.com" {
+			t.Errorf("Cell %d should have second URL, got: %s", i, screen[0][i].HyperlinkURL)
+		}
+	}
+}
+
+func TestOSC8HyperlinkMultiline(t *testing.T) {
+	term := NewTerminal(24, 80)
+
+	// Open hyperlink
+	term.Write([]byte("\x1b]8;id=multiline;http://example.com\x1b\\"))
+	term.Write([]byte("Line 1\r\n"))
+	term.Write([]byte("Line 2"))
+	term.Write([]byte("\x1b]8;;\x1b\\"))
+
+	screen := term.GetScreen()
+
+	// Check first line
+	for i := 0; i < 6; i++ {
+		if screen[0][i].HyperlinkURL != "http://example.com" {
+			t.Errorf("Line 0, Cell %d should have hyperlink URL", i)
+		}
+		if screen[0][i].HyperlinkID != "multiline" {
+			t.Errorf("Line 0, Cell %d should have hyperlink ID", i)
+		}
+	}
+
+	// Check second line
+	for i := 0; i < 6; i++ {
+		if screen[1][i].HyperlinkURL != "http://example.com" {
+			t.Errorf("Line 1, Cell %d should have hyperlink URL", i)
+		}
+		if screen[1][i].HyperlinkID != "multiline" {
+			t.Errorf("Line 1, Cell %d should have hyperlink ID", i)
+		}
+	}
+}
+
+func TestOSC8EmptyURL(t *testing.T) {
+	term := NewTerminal(24, 80)
+
+	// Open hyperlink
+	term.Write([]byte("\x1b]8;;http://example.com\x1b\\Link\x1b]8;;\x1b\\"))
+	term.Write([]byte("NoLink"))
+
+	screen := term.GetScreen()
+
+	// First 4 characters should have link
+	for i := 0; i < 4; i++ {
+		if screen[0][i].HyperlinkURL != "http://example.com" {
+			t.Errorf("Cell %d should have hyperlink", i)
+		}
+	}
+
+	// Next 6 characters should not have link
+	for i := 4; i < 10; i++ {
+		if screen[0][i].HyperlinkURL != "" {
+			t.Errorf("Cell %d should not have hyperlink, got: %s", i, screen[0][i].HyperlinkURL)
+		}
+	}
+}
+
+func TestOSC8IgnoreOtherOSCCommands(t *testing.T) {
+	term := NewTerminal(24, 80)
+
+	// Send OSC 0 (set window title) - should be ignored
+	term.Write([]byte("\x1b]0;Window Title\x07"))
+	term.Write([]byte("Text"))
+
+	screen := term.GetScreen()
+
+	// Text should be rendered without hyperlink
+	if screen[0][0].Char != 'T' {
+		t.Errorf("Expected 'T' at position 0, got: %c", screen[0][0].Char)
+	}
+	if screen[0][0].HyperlinkURL != "" {
+		t.Errorf("Should not have hyperlink URL")
+	}
+}
+
+func TestOSC8ComplexParams(t *testing.T) {
+	term := NewTerminal(24, 80)
+
+	// Test with multiple parameters (only id should be recognized)
+	term.Write([]byte("\x1b]8;id=test123:foo=bar;http://test.com\x1b\\Link\x1b]8;;\x1b\\"))
+
+	screen := term.GetScreen()
+
+	for i := 0; i < 4; i++ {
+		if screen[0][i].HyperlinkURL != "http://test.com" {
+			t.Errorf("Cell %d should have hyperlink URL", i)
+		}
+		if screen[0][i].HyperlinkID != "test123" {
+			t.Errorf("Cell %d should have ID 'test123', got: %s", i, screen[0][i].HyperlinkID)
+		}
+	}
+}

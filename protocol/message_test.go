@@ -406,3 +406,123 @@ func TestWriteError(t *testing.T) {
 		t.Errorf("error message mismatch: expected %q, got %q", testErr.Error(), string(msg.Payload))
 	}
 }
+
+func TestScreenResponse(t *testing.T) {
+	tests := []struct {
+		name   string
+		screen *ScreenResponse
+	}{
+		{
+			name: "basic screen",
+			screen: &ScreenResponse{
+				Rows:      24,
+				Cols:      80,
+				CursorRow: 5,
+				CursorCol: 10,
+				Lines:     []string{"Line 1", "Line 2", "Line 3"},
+			},
+		},
+		{
+			name: "empty screen",
+			screen: &ScreenResponse{
+				Rows:      0,
+				Cols:      0,
+				CursorRow: 0,
+				CursorCol: 0,
+				Lines:     []string{},
+			},
+		},
+		{
+			name: "large screen",
+			screen: &ScreenResponse{
+				Rows:      100,
+				Cols:      200,
+				CursorRow: 50,
+				CursorCol: 100,
+				Lines:     []string{"Line 1", "Line 2", "Line 3", "Line 4", "Line 5"},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var buf bytes.Buffer
+
+			// Write screen response
+			if err := WriteScreenResponse(&buf, tt.screen); err != nil {
+				t.Fatalf("WriteScreenResponse failed: %v", err)
+			}
+
+			// Read message
+			msg, err := ReadMessage(&buf)
+			if err != nil {
+				t.Fatalf("ReadMessage failed: %v", err)
+			}
+
+			if msg.Type != MsgScreenResponse {
+				t.Errorf("expected type %d, got %d", MsgScreenResponse, msg.Type)
+			}
+
+			// Parse screen response
+			parsedScreen, err := ParseScreenResponse(msg.Payload)
+			if err != nil {
+				t.Fatalf("ParseScreenResponse failed: %v", err)
+			}
+
+			if parsedScreen.Rows != tt.screen.Rows {
+				t.Errorf("Rows mismatch: expected %d, got %d", tt.screen.Rows, parsedScreen.Rows)
+			}
+
+			if parsedScreen.Cols != tt.screen.Cols {
+				t.Errorf("Cols mismatch: expected %d, got %d", tt.screen.Cols, parsedScreen.Cols)
+			}
+
+			if parsedScreen.CursorRow != tt.screen.CursorRow {
+				t.Errorf("CursorRow mismatch: expected %d, got %d", tt.screen.CursorRow, parsedScreen.CursorRow)
+			}
+
+			if parsedScreen.CursorCol != tt.screen.CursorCol {
+				t.Errorf("CursorCol mismatch: expected %d, got %d", tt.screen.CursorCol, parsedScreen.CursorCol)
+			}
+
+			if len(parsedScreen.Lines) != len(tt.screen.Lines) {
+				t.Errorf("Lines length mismatch: expected %d, got %d", len(tt.screen.Lines), len(parsedScreen.Lines))
+			} else {
+				for i, line := range tt.screen.Lines {
+					if parsedScreen.Lines[i] != line {
+						t.Errorf("Line %d mismatch: expected %q, got %q", i, line, parsedScreen.Lines[i])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestParseScreenResponseErrors(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload []byte
+	}{
+		{
+			name:    "invalid json",
+			payload: []byte("not valid json"),
+		},
+		{
+			name:    "empty payload",
+			payload: []byte{},
+		},
+		{
+			name:    "partial json",
+			payload: []byte("{\"rows\": 24"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ParseScreenResponse(tt.payload)
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+		})
+	}
+}
