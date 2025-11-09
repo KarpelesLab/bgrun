@@ -117,17 +117,18 @@ func (d *Daemon) resizeVTY(rows, cols uint16) error {
 		d.vtyTermemu.Resize(int(rows), int(cols))
 	}
 
-	// Send SIGWINCH to the process to notify it of the resize
+	// Send SIGWINCH to the foreground process group
 	// pty.Setsize should do this automatically, but let's be explicit
 	d.mu.RLock()
-	pid := d.pid
 	running := d.running
 	d.mu.RUnlock()
 
-	if pid > 0 && running {
-		// Send SIGWINCH to the process group (negative PID)
-		if err := syscall.Kill(-pid, syscall.SIGWINCH); err != nil {
-			log.Printf("Warning: failed to send SIGWINCH: %v", err)
+	if running {
+		// Get the actual foreground process group and send to it
+		if pgrp, err := d.getForegroundPgrp(); err == nil && pgrp > 0 {
+			if err := syscall.Kill(-pgrp, syscall.SIGWINCH); err != nil {
+				log.Printf("Warning: failed to send SIGWINCH to pgrp %d: %v", pgrp, err)
+			}
 		}
 	}
 
