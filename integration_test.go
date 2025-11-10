@@ -30,13 +30,6 @@ func TestClientServerIntegration(t *testing.T) {
 	if startErr := d.Start(); startErr != nil {
 		t.Fatalf("Failed to start daemon: %v", startErr)
 	}
-	defer func() {
-		// Clean up daemon
-		time.Sleep(100 * time.Millisecond)
-	}()
-
-	// Wait for socket to be ready
-	time.Sleep(100 * time.Millisecond)
 
 	// Connect client
 	c, err := bgclient.Connect(d.SocketPath())
@@ -60,7 +53,7 @@ func TestClientServerIntegration(t *testing.T) {
 	}
 
 	// Wait for process to complete
-	time.Sleep(2 * time.Second)
+	d.Wait()
 
 	// Get status again
 	status, err = c.GetStatus()

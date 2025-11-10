@@ -29,9 +29,7 @@ func TestDaemonBasic(t *testing.T) {
 	}
 	defer d.stop()
 
-	// Wait a bit for the process to start
-	time.Sleep(100 * time.Millisecond)
-
+	// Process should be started after Start() returns
 	status := d.GetStatus()
 	if status.PID == 0 {
 		t.Error("PID should not be 0")
@@ -42,7 +40,7 @@ func TestDaemonBasic(t *testing.T) {
 	}
 
 	// Wait for process to complete
-	time.Sleep(500 * time.Millisecond)
+	d.Wait()
 
 	status = d.GetStatus()
 	if status.Running {
@@ -114,9 +112,7 @@ func TestDaemonSignal(t *testing.T) {
 	}
 	defer d.stop()
 
-	// Wait for process to start
-	time.Sleep(100 * time.Millisecond)
-
+	// Process should be running after Start() returns
 	status := d.GetStatus()
 	if !status.Running {
 		t.Fatal("Process should be running")
@@ -128,7 +124,7 @@ func TestDaemonSignal(t *testing.T) {
 	}
 
 	// Wait for process to exit
-	time.Sleep(500 * time.Millisecond)
+	d.Wait()
 
 	status = d.GetStatus()
 	if status.Running {
@@ -191,7 +187,7 @@ func TestOutputLogging(t *testing.T) {
 	defer d.stop()
 
 	// Wait for process to complete and output to be written
-	time.Sleep(1 * time.Second)
+	d.Wait()
 
 	// Check that log file exists and has content
 	logPath := filepath.Join(tmpDir, "output.log")
@@ -235,9 +231,6 @@ func TestStdinStream(t *testing.T) {
 	}
 	defer d.stop()
 
-	// Wait for process to start
-	time.Sleep(100 * time.Millisecond)
-
 	// Write to stdin
 	testData := []byte("hello from stdin\n")
 	if stdinErr := d.handleStdin(testData); stdinErr != nil {
@@ -250,7 +243,7 @@ func TestStdinStream(t *testing.T) {
 	}
 
 	// Wait for process to complete
-	time.Sleep(500 * time.Millisecond)
+	d.Wait()
 
 	// Check log file
 	logPath := filepath.Join(tmpDir, "output.log")
@@ -286,9 +279,7 @@ func TestGetStatusResponse(t *testing.T) {
 	}
 	defer d.stop()
 
-	// Wait for process to start
-	time.Sleep(100 * time.Millisecond)
-
+	// Get status after process starts
 	status := d.GetStatus()
 
 	// Verify status fields
@@ -321,7 +312,7 @@ func TestGetStatusResponse(t *testing.T) {
 	}
 
 	// Wait for process to complete
-	time.Sleep(1500 * time.Millisecond)
+	d.Wait()
 
 	status = d.GetStatus()
 	if status.Running {
