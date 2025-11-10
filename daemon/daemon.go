@@ -153,6 +153,11 @@ func (d *Daemon) Done() <-chan struct{} {
 	return d.doneCh
 }
 
+// Wait blocks until the process exits
+func (d *Daemon) Wait() {
+	<-d.doneCh
+}
+
 // Start starts the daemon and the managed process
 func (d *Daemon) Start() error {
 	// Create runtime directory

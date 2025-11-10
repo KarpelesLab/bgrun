@@ -84,8 +84,8 @@ func TestDaemonLongRunning(t *testing.T) {
 		t.Error("Process should be running")
 	}
 
-	// Wait for completion with buffer for system overhead
-	time.Sleep(2500 * time.Millisecond)
+	// Wait for completion
+	d.Wait()
 
 	status = d.GetStatus()
 	if status.Running {
