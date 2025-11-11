@@ -6,10 +6,13 @@ A lightweight background process manager with a clean binary-safe socket API for
 
 - **Background Process Management**: Run any command in the background with full control
 - **Binary-Safe Socket API**: Length-prefixed protocol supporting binary data
+- **VTY Support**: Full pseudo-terminal support for interactive programs (vim, bash, htop, etc.)
+- **Terminal Export**: Export terminal state as plain text, Markdown, or HTML
+- **Hyperlink Support**: OSC8 terminal hyperlinks with clickable URLs
 - **Flexible I/O Handling**: Configure stdin, stdout, and stderr independently
 - **Output Streaming**: Attach/detach from process output at any time
 - **Multi-Client Support**: Multiple clients can connect to the same process
-- **Process Control**: Send signals, manage stdin, check status
+- **Process Control**: Send signals, manage stdin, check status, wait for completion
 - **Automatic Runtime Directory**: Uses `$XDG_RUNTIME_DIR` or `/tmp/.bgrun-<uid>`
 
 ## Installation
@@ -277,18 +280,30 @@ import "github.com/KarpelesLab/bgrun/bgclient"
 
 ### API Methods
 
+#### Connection & Status
 - `New(pid int) (*Client, error)` - Create client connection to daemon by PID (handles both running and zombie processes)
 - `Connect(socketPath string) (*Client, error)` - Connect to daemon by socket path (deprecated, use New instead)
 - `GetStatus() (*StatusResponse, error)` - Get process status (works on zombies)
 - `ReadOutput() ([]byte, error)` - Read complete output log from terminated process (zombies only)
+
+#### Process Control
 - `WriteStdin(data []byte) error` - Write to stdin (fails on zombies with ErrProcessTerminated)
 - `CloseStdin() error` - Close stdin pipe (fails on zombies)
 - `SendSignal(sig syscall.Signal) error` - Send signal (fails on zombies)
 - `Wait(timeoutSecs uint32, waitType byte) (byte, error)` - Wait for process exit (returns immediately and reaps zombies)
+- `Shutdown() error` - Shutdown daemon (fails on zombies)
+
+#### Output Streaming
 - `Attach(streams byte) error` - Attach to output streams for real-time streaming (fails on zombies)
 - `Detach() error` - Detach from output (fails on zombies)
-- `Shutdown() error` - Shutdown daemon (fails on zombies)
 - `ReadMessages(outputHandler, exitHandler) error` - Read real-time output/events (fails on zombies)
+
+#### Terminal Export (VTY mode only)
+- `GetScreen() (*ScreenResponse, error)` - Get current terminal screen state with cursor position
+- `Export(req *ExportRequest) (*ExportResponse, error)` - Export terminal content with custom options
+- `ExportPlainText(includeScrollback bool) (string, error)` - Export as plain text
+- `ExportMarkdown(includeScrollback bool) (string, error)` - Export as Markdown (preserves hyperlinks)
+- `ExportHTML(includeScrollback bool) (string, error)` - Export as HTML with styling
 
 #### Zombie Process Handling
 
@@ -358,7 +373,8 @@ bgrun -ctl -pid <daemon-pid> attach
 
 # Your terminal will be in raw mode and fully interactive
 # Terminal resize events are automatically forwarded to the process
-# Press Ctrl+C to detach (or the program will exit normally)
+# Press <Enter>~. to detach (SSH-style escape sequence)
+# Press <Enter>~~ to send a literal ~ character
 ```
 
 ### Features
@@ -369,6 +385,42 @@ bgrun -ctl -pid <daemon-pid> attach
 - **Raw mode**: Client terminal switches to raw mode for full interactivity
 - **Bidirectional I/O**: Full stdin/stdout streaming with binary safety
 - **Multiple attach**: Multiple clients can attach to view output (one active controller)
+- **OSC8 hyperlinks**: Full support for terminal hyperlinks (clickable URLs)
+- **Screen capture**: Export terminal state as plain text, Markdown, or HTML
+- **SGR formatting**: Complete VT100 color and formatting support (bold, italic, colors, etc.)
+
+### Terminal Export
+
+Export terminal content from VTY sessions in multiple formats:
+
+```go
+c, _ := bgclient.New(12345)
+
+// Export current screen as plain text
+text, _ := c.ExportPlainText(false)
+fmt.Println(text)
+
+// Export as Markdown (preserves hyperlinks)
+markdown, _ := c.ExportMarkdown(false)
+fmt.Println(markdown)
+
+// Export as HTML with styling
+html, _ := c.ExportHTML(false)
+os.WriteFile("terminal.html", []byte(html), 0644)
+
+// Custom export with options
+resp, _ := c.Export(&protocol.ExportRequest{
+    Format:            protocol.ExportFormatMarkdown,
+    IncludeScrollback: true,
+    StartLine:         0,
+    EndLine:           50,
+})
+```
+
+Supported formats:
+- **PlainText**: Clean text output, strips all formatting
+- **Markdown**: Preserves hyperlinks as `[text](url)`, escapes special chars
+- **HTML**: Full styling with colors, bold, italic, underline, hyperlinks
 
 ## Security
 
